@@ -17,6 +17,12 @@ targets:
     dependencies:
       - package: LinkKit
         product: LinkKit
+      # Weak-linked: FoundationModels only exists on iOS 26+ Apple Intelligence
+      # devices. The app's deploymentTarget stays 17.0 so it still launches
+      # everywhere else; AIAdvisorManager/AIChatView guard every call with
+      # @available(iOS 26.0, *) and check SystemLanguageModel availability at runtime.
+      - sdk: FoundationModels.framework
+        weak: true
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

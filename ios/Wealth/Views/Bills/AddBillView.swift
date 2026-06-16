@@ -70,6 +70,7 @@ struct AddBillView: View {
             linkedAccount: linkedAccount
         )
         modelContext.insert(bill)
+        NotificationManager.shared.schedule(for: bill)
         dismiss()
     }
 }

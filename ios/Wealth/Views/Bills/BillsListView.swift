@@ -43,7 +43,10 @@ struct BillsListView: View {
                         }
                     }
                     .onDelete { offsets in
-                        for index in offsets { modelContext.delete(bills[index]) }
+                        for index in offsets {
+                            NotificationManager.shared.cancel(for: bills[index])
+                            modelContext.delete(bills[index])
+                        }
                     }
                 }
             }

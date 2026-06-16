@@ -13,6 +13,18 @@ struct AdvisorView: View {
     var body: some View {
         NavigationStack {
             List {
+                if #available(iOS 26.0, *) {
+                    Section {
+                        NavigationLink {
+                            AIChatView()
+                        } label: {
+                            Label("Chat with On-Device Advisor", systemImage: "bubble.left.and.bubble.right.fill")
+                        }
+                    } footer: {
+                        Text("Powered by Apple's on-device Foundation Models \u{2014} runs locally on supported iPhones, no data ever leaves your device.")
+                    }
+                }
+
                 if insights.isEmpty {
                     ContentUnavailableView(
                         "No insights yet",
