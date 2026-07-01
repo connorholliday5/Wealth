@@ -32,3 +32,19 @@ targets:
         SWIFT_VERSION: "5.0"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: Wealth
+    scheme:
+      testTargets:
+        - WealthTests
+  WealthTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: WealthTests
+    dependencies:
+      - target: Wealth
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.connorholliday.wealth.tests
+        SWIFT_VERSION: "5.0"
