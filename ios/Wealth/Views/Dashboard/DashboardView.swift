@@ -27,6 +27,14 @@ struct DashboardView: View {
                     .padding(.vertical, 8)
                 }
 
+                Section {
+                    NavigationLink {
+                        PaycheckPlannerView()
+                    } label: {
+                        Label("Plan a Paycheck", systemImage: "dollarsign.arrow.circlepath")
+                    }
+                }
+
                 Section("By Category") {
                     ForEach(AccountCategory.allCases, id: \.self) { category in
                         let total = accounts

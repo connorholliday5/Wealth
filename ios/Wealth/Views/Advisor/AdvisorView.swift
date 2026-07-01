@@ -25,6 +25,16 @@ struct AdvisorView: View {
                     }
                 }
 
+                Section {
+                    NavigationLink {
+                        PaycheckPlannerView()
+                    } label: {
+                        Label("Paycheck Allocation Advisor", systemImage: "dollarsign.arrow.circlepath")
+                    }
+                } footer: {
+                    Text("A priority-waterfall recommendation for where each paycheck should go, computed from your accounts and bills.")
+                }
+
                 if insights.isEmpty {
                     ContentUnavailableView(
                         "No insights yet",

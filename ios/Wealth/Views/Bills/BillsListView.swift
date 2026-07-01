@@ -11,6 +11,11 @@ struct BillsListView: View {
             List {
                 Section {
                     NavigationLink {
+                        MonthlyOverviewView()
+                    } label: {
+                        Label("Monthly Overview", systemImage: "chart.pie")
+                    }
+                    NavigationLink {
                         DebtPayoffView()
                     } label: {
                         Label("Debt Payoff Planner", systemImage: "chart.line.downtrend.xyaxis")

@@ -47,8 +47,10 @@ enum SampleData {
         let healthPremium = Bill(name: "Health Insurance Premium", amount: 145, kind: .workBenefitPremium, frequency: .semimonthly, nextDueDate: .now.addingDays(3), isPayrollDeduction: true)
         let studentPayment = Bill(name: "Student Loan Payment", amount: 210, kind: .loanPayment, frequency: .monthly, nextDueDate: .now.addingDays(12), linkedAccount: studentLoan)
         let cardPayment = Bill(name: "Visa Payment", amount: 100, kind: .creditCardPayment, frequency: .monthly, nextDueDate: .now.addingDays(8), linkedAccount: creditCard)
+        let netflix = Bill(name: "Netflix", amount: 16, kind: .subscription, frequency: .monthly, nextDueDate: .now.addingDays(20))
+        let spotify = Bill(name: "Spotify", amount: 12, kind: .subscription, frequency: .monthly, nextDueDate: .now.addingDays(25))
 
-        for bill in [rent, internetBill, healthPremium, studentPayment, cardPayment] {
+        for bill in [rent, internetBill, healthPremium, studentPayment, cardPayment, netflix, spotify] {
             context.insert(bill)
         }
 
