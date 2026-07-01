@@ -32,6 +32,7 @@ targets:
         SWIFT_VERSION: "5.0"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: Wealth
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "Wealth uses Face ID to keep your accounts and balances private."
     scheme:
       testTargets:
         - WealthTests

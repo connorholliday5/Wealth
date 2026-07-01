@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import FoundationModels
 
+/// On-device advisor chat, powered by Apple Foundation Models (iOS 26+).
 @available(iOS 26.0, *)
 struct AIChatView: View {
     @Query private var accounts: [Account]
@@ -13,7 +14,13 @@ struct AIChatView: View {
         Group {
             switch advisor.availability {
             case .available:
-                chatBody
+                ChatScaffold(
+                    messages: advisor.messages,
+                    isResponding: advisor.isResponding,
+                    input: $input
+                ) { text in
+                    Task { await advisor.send(text) }
+                }
             case .unavailable(let reason):
                 ContentUnavailableView(
                     "On-Device AI Unavailable",
@@ -24,69 +31,20 @@ struct AIChatView: View {
                 ContentUnavailableView("On-Device AI Unavailable", systemImage: "bubble.left.and.bubble.right")
             }
         }
-        .navigationTitle("Ask the Advisor")
+        .navigationTitle("On-Device Advisor")
         .onAppear { advisor.start(accounts: accounts, bills: bills) }
-    }
-
-    private var chatBody: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(advisor.messages) { message in
-                        ChatBubble(message: message)
-                    }
-                    if advisor.isResponding {
-                        ProgressView().padding(.leading)
-                    }
-                }
-                .padding()
-            }
-
-            Divider()
-
-            HStack(spacing: 8) {
-                TextField("Ask about your finances...", text: $input, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                Button {
-                    let text = input
-                    input = ""
-                    Task { await advisor.send(text) }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                }
-                .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || advisor.isResponding)
-            }
-            .padding()
-        }
     }
 
     private func message(for reason: SystemLanguageModel.Availability.UnavailableReason) -> String {
         switch reason {
         case .deviceNotEligible:
-            return "This device doesn't support Apple Intelligence."
+            return "This device doesn't support Apple Intelligence. Use the Cloud advisor instead (Settings → AI Advisor)."
         case .appleIntelligenceNotEnabled:
-            return "Turn on Apple Intelligence in Settings to chat with the on-device advisor."
+            return "Turn on Apple Intelligence in Settings to chat on-device, or use the Cloud advisor."
         case .modelNotReady:
             return "The on-device model is still downloading. Try again shortly."
         @unknown default:
-            return "On-device AI isn't available right now."
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-private struct ChatBubble: View {
-    let message: AIAdvisorManager.ChatMessage
-
-    var body: some View {
-        HStack {
-            if message.role == .user { Spacer(minLength: 0) }
-            Text(message.text)
-                .padding(10)
-                .background(message.role == .user ? Color.accentColor.opacity(0.15) : Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            if message.role == .advisor { Spacer(minLength: 0) }
+            return "On-device AI isn't available right now. Try the Cloud advisor."
         }
     }
 }

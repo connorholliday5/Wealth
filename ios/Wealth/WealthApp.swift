@@ -15,7 +15,9 @@ struct WealthApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
+            AppLockGate {
+                RootTabView()
+            }
         }
         .modelContainer(sharedModelContainer)
     }

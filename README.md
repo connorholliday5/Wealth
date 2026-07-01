@@ -83,13 +83,50 @@ first open.
   contribution pace toward annual limits, employer-match reminders, upcoming
   cash-flow gaps, savings rate, and top spending category, all computed live
   from your accounts/bills/transactions.
-- **On-device AI chat** (`ios/Wealth/Insights/AIAdvisorManager.swift`,
-  `ios/Wealth/Views/Advisor/AIChatView.swift`): a free-form Q&A advisor on top
-  of the same rules engine, powered by Apple's **Foundation Models** framework
-  — see "Apple's on-device AI" below. Free, no API key, no network call.
+- **AI chat advisor** — free-form Q&A grounded in your own accounts/bills, with
+  two interchangeable backends selected in Settings → AI Advisor (see "AI chat
+  advisor" below):
+  - **On-device** (`Insights/AIAdvisorManager.swift`, `Views/Advisor/AIChatView.swift`):
+    Apple's **Foundation Models** framework — free, private, no network call,
+    but iPhone 15 Pro+ on iOS 26 with Apple Intelligence only.
+  - **Cloud** (`Insights/CloudAdvisorManager.swift`, `Views/Advisor/CloudChatView.swift`,
+    `server/src/routes/advisor.ts`): a cloud model reached through the Wealth
+    server — works on **any iPhone**. This is the path if your phone doesn't have
+    Apple Intelligence.
+- **Paycheck allocation advisor** (`ios/Wealth/Insights/PaycheckAllocationEngine.swift`,
+  `Views/Paycheck/PaycheckPlannerView.swift`): enter a check amount + pay cadence,
+  get a priority-waterfall recommendation (bills → emergency fund → highest-rate
+  debt → tax-advantaged room → discretionary). Reached from Dashboard and Advisor.
+- **Monthly bills & subscriptions overview** (`Views/Bills/MonthlyOverviewView.swift`):
+  total monthly recurring outflow, subscriptions subtotal, per-category breakdown.
+- **App lock** (`ios/Wealth/Security/AppLockManager.swift`, `AppLockGate.swift`):
+  Face ID / Touch ID / passcode gate before balances are shown; re-locks on
+  background. Toggle in Settings → Security.
 - **Bill reminder notifications** (`ios/Wealth/Notifications/NotificationManager.swift`):
   local notifications the day before and on the due date for every bill —
   see "Notifications" below.
+
+## AI chat advisor (on-device + cloud)
+
+The chat advisor has two backends behind one screen; pick via Settings → AI
+Advisor (`AdvisorProvider`: Automatic / On-Device / Cloud). Both are grounded by
+the **same** system prompt built from your local data in
+`Insights/AdvisorContext.swift` (`buildAdvisorSystemPrompt`).
+
+- **On-device** — Apple Foundation Models (see the next section). Free, private,
+  Apple Intelligence hardware only.
+- **Cloud** — for iPhones **without** Apple Intelligence. The app sends the
+  conversation + system prompt to your Wealth server (`POST /api/advisor/chat`),
+  which calls the model with a **server-side API key** and returns the reply.
+  The key never lives in the app. Enable it by setting `ANTHROPIC_API_KEY` in
+  `server/.env`; without it the server reports the cloud advisor as unavailable
+  and the app shows a clear message. Model is set in `server/src/routes/advisor.ts`
+  (defaults to `claude-opus-4-8`; switch to `claude-haiku-4-5` there for lower
+  cost per message).
+  - **Privacy note:** cloud mode sends a snapshot of your accounts/bills to the
+    model (through your own server) with each message. On-device mode does not.
+  - **Cost:** pay-as-you-go on your API key; for personal use this is typically
+    cents to a couple dollars a month. It's inert (no cost) until you add a key.
 
 ## Apple's on-device AI (Foundation Models framework)
 
@@ -153,9 +190,9 @@ populated without entering anything by hand.
 
 ## Suggested next steps
 
-- Add Face ID / passcode gating before showing balances (`LocalAuthentication`).
 - If you want multi-device sync down the road, the SwiftData store can move to
   a `CloudKit`-backed configuration with minimal model changes.
-- If you ever want a cloud LLM (e.g. for devices without Apple Intelligence,
-  or more capable reasoning) alongside the on-device chat, `AIAdvisorManager.buildInstructions`
-  is reusable as the context you'd send to that API too.
+- Stream cloud advisor replies token-by-token (the server route already has the
+  shape for it) so long answers appear as they generate.
+- Let the cloud advisor call tools (e.g. hand it the paycheck planner's output)
+  for richer, data-driven answers.

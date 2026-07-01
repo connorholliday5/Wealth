@@ -1,10 +1,12 @@
 import SwiftUI
 import SwiftData
+import FoundationModels
 
 struct AdvisorView: View {
     @Query private var accounts: [Account]
     @Query private var bills: [Bill]
     @Query private var transactions: [Transaction]
+    @AppStorage("advisorProvider") private var providerRaw = AdvisorProvider.auto.rawValue
 
     private var insights: [Insight] {
         InsightsEngine.generate(accounts: accounts, bills: bills, transactions: transactions)
@@ -13,16 +15,14 @@ struct AdvisorView: View {
     var body: some View {
         NavigationStack {
             List {
-                if #available(iOS 26.0, *) {
-                    Section {
-                        NavigationLink {
-                            AIChatView()
-                        } label: {
-                            Label("Chat with On-Device Advisor", systemImage: "bubble.left.and.bubble.right.fill")
-                        }
-                    } footer: {
-                        Text("Powered by Apple's on-device Foundation Models \u{2014} runs locally on supported iPhones, no data ever leaves your device.")
+                Section {
+                    NavigationLink {
+                        chatDestination
+                    } label: {
+                        Label("Chat with Advisor", systemImage: "bubble.left.and.bubble.right.fill")
                     }
+                } footer: {
+                    Text("Ask free-form questions about your finances. Runs on Apple's on-device model where supported, otherwise a cloud model via your Wealth server. Change this in Settings \u{2192} AI Advisor.")
                 }
 
                 Section {
@@ -59,6 +59,27 @@ struct AdvisorView: View {
                 }
             }
             .navigationTitle("Advisor")
+        }
+    }
+
+    /// Routes to the on-device or cloud chat based on the user's preference and
+    /// what the device actually supports.
+    @ViewBuilder private var chatDestination: some View {
+        switch AdvisorProvider(rawValue: providerRaw) ?? .auto {
+        case .cloud:
+            CloudChatView()
+        case .onDevice:
+            if #available(iOS 26.0, *) {
+                AIChatView()
+            } else {
+                CloudChatView()
+            }
+        case .auto:
+            if #available(iOS 26.0, *), case .available = SystemLanguageModel.default.availability {
+                AIChatView()
+            } else {
+                CloudChatView()
+            }
         }
     }
 

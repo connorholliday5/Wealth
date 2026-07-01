@@ -17,6 +17,9 @@ struct RootTabView: View {
 
             AdvisorView()
                 .tabItem { Label("Advisor", systemImage: "sparkles") }
+
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gear") }
         }
         .task {
             NotificationManager.shared.requestAuthorizationIfNeeded()
