@@ -11,7 +11,7 @@ struct PaycheckPlannerView: View {
     @State private var amountText = ""
     @State private var payFrequency: PayFrequency = .biweekly
 
-    private var paycheck: Decimal { Decimal(string: amountText) ?? 0 }
+    private var paycheck: Decimal { Decimal(userInput: amountText) ?? 0 }
 
     private var plan: PaycheckPlan {
         PaycheckAllocationEngine.plan(

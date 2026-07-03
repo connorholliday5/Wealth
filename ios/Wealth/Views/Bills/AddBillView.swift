@@ -58,7 +58,7 @@ struct AddBillView: View {
     }
 
     private func save() {
-        guard let amount = Decimal(string: amountText) else { return }
+        guard let amount = Decimal(userInput: amountText) else { return }
         let bill = Bill(
             name: name,
             amount: amount,

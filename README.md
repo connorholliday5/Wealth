@@ -33,11 +33,12 @@ npm install
 npm run dev
 ```
 
-This starts the proxy on `http://localhost:8787`. Point the iOS app at it by
-editing `PlaidAPIClient.baseURL` in `ios/Wealth/Networking/PlaidAPIClient.swift`
-(localhost only works when running the Simulator on the same Mac; for a physical
-phone, deploy the server somewhere reachable, e.g. a small Fly.io/Render instance,
-over HTTPS).
+This starts the proxy on `http://localhost:8787`. The app's server address and
+access key are set **in the app** under Settings → Server (no code edit needed).
+Leave the address empty for the Simulator on the same Mac; for a physical phone,
+deploy the server somewhere reachable over HTTPS (iOS blocks plain http to
+anything but localhost) and set `APP_SHARED_SECRET` in `.env`, entering the same
+value as the app's access key.
 
 ## Running the iOS app
 
@@ -60,16 +61,43 @@ first open.
 > it just can't be compiled or run outside Xcode, since iOS apps require Apple's
 > toolchain.
 
+### First-run checklist (fastest path to seeing it work)
+
+1. `brew install xcodegen && cd ios && xcodegen generate && open Wealth.xcodeproj`
+2. Build & run on a Simulator (⌘R). Approve the Face ID prompt (Simulator:
+   Features → Face ID → Enrolled, then Matching Face) or toggle the lock off in
+   Settings inside the app.
+3. Add a couple of accounts and bills manually — dashboard, insights, paycheck
+   planner, and monthly overview all work with no server at all.
+4. To test bank linking: start the server with **sandbox** Plaid keys
+   (`cd server && npm run dev`), then in the app: Accounts → + → Connect. Plaid
+   sandbox's test bank is `user_good` / `pass_good`. Transactions, APRs, and
+   balances sync in automatically after linking and on every pull-to-refresh.
+5. To test the cloud advisor: set `ANTHROPIC_API_KEY` in `server/.env`, restart
+   the server, then Advisor → Chat with Advisor.
+6. Run the unit tests with ⌘U (money math, bill rollover, sync mapping/decoding).
+
 ## What's implemented
 
 - **Accounts** (`ios/Wealth/Models/Account.swift`): checking, savings, credit
   cards, Roth/Traditional IRA, 401(k), HSA, student/auto/mortgage/other loans.
   Add manually or link via Plaid (checking/savings/credit cards/investment
   accounts, including employer 401(k)/HSA where your provider supports Plaid).
+  Manual balances are editable in the account detail screen; swipe to delete.
+- **Automatic sync** (`ios/Wealth/Networking/SyncEngine.swift`): linked accounts
+  refresh on app open (throttled to 15 min) and pull-to-refresh — balances,
+  credit-card APRs, loan rates/minimums, and the full transaction feed
+  (incremental via Plaid's cursor; categories mapped into the app's taxonomy so
+  the insights engine runs on real spending). Dashboard shows sync status.
+- **Net-worth history** (`ios/Wealth/Models/NetWorthSnapshot.swift`): a daily
+  snapshot recorded at launch drives a 90-day trend chart on the Dashboard.
 - **Bills** (`ios/Wealth/Models/Bill.swift`): one-off or recurring (weekly,
   biweekly, semimonthly, monthly, quarterly, annual) — covers rent/utilities,
   loan and credit card payments, and payroll-deducted work-benefit premiums
   (health/dental/vision), tagged separately from 401(k)/HSA contributions.
+  Overdue bills roll forward automatically at launch (`MaintenanceEngine`);
+  swipe right to **mark paid** — the due date advances a cycle and payments on
+  a linked loan/card reduce that balance.
 - **Debt payoff planner** (`ios/Wealth/Views/Bills/DebtPayoffView.swift`):
   avalanche (highest APR first) or snowball (smallest balance first) ordering
   across every loan/credit card, with an extra-payment slider.

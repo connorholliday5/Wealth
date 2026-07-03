@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct AccountsListView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query private var accounts: [Account]
     @State private var showingAddAccount = false
 
@@ -15,15 +16,33 @@ struct AccountsListView: View {
     var body: some View {
         NavigationStack {
             List {
+                if accounts.isEmpty {
+                    ContentUnavailableView {
+                        Label("No accounts yet", systemImage: "creditcard")
+                    } description: {
+                        Text("Tap + to add your first account — enter it manually or link your bank securely.")
+                    }
+                }
+
                 ForEach(grouped, id: \.0) { category, items in
                     Section(category.displayName) {
                         ForEach(items) { account in
                             NavigationLink(value: account) {
                                 AccountRow(account: account)
                             }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    modelContext.delete(account)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
+            }
+            .refreshable {
+                await SyncEngine.shared.syncAll(context: modelContext)
             }
             .navigationDestination(for: Account.self) { account in
                 AccountDetailView(account: account)

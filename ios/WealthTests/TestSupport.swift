@@ -8,7 +8,7 @@ import SwiftData
 @MainActor
 enum TestSupport {
     static func makeContext() throws -> ModelContext {
-        let schema = Schema([Account.self, Transaction.self, Bill.self])
+        let schema = Schema([Account.self, Transaction.self, Bill.self, NetWorthSnapshot.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
         return ModelContext(container)

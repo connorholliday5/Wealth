@@ -34,7 +34,7 @@ struct DebtPayoffView: View {
     }
 
     private var extraPayment: Decimal {
-        Decimal(string: extraPaymentText) ?? 0
+        Decimal(userInput: extraPaymentText) ?? 0
     }
 
     var body: some View {

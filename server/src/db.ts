@@ -92,3 +92,7 @@ export function setCursor(itemId: string, cursor: string) {
      ON CONFLICT(item_id) DO UPDATE SET cursor = excluded.cursor`
   ).run(itemId, cursor);
 }
+
+export function clearCursor(itemId: string) {
+  db.prepare(`DELETE FROM sync_cursors WHERE item_id = ?`).run(itemId);
+}

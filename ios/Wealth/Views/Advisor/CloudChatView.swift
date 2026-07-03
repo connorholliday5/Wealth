@@ -27,7 +27,7 @@ struct CloudChatView: View {
                 ContentUnavailableView(
                     "Cloud Advisor Not Configured",
                     systemImage: "cloud",
-                    description: Text("Add an ANTHROPIC_API_KEY to your Wealth server and make sure the app points at it (PlaidAPIClient.baseURL) to enable the cloud advisor.")
+                    description: Text("Add an ANTHROPIC_API_KEY to your Wealth server, then check the server address in Settings \u{2192} Server. The on-device advisor and rule-based insights work without it.")
                 )
             }
         }

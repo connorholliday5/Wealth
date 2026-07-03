@@ -109,6 +109,9 @@ final class Account {
     var employerMatchLimitPercent: Double?
     /// Contributed so far in the current calendar year, tracked manually or from payroll bills.
     var yearToDateContribution: Decimal?
+    /// Calendar year the yearToDateContribution belongs to; MaintenanceEngine
+    /// resets the amount when a new year starts.
+    var contributionYear: Int?
     /// Overrides ContributionLimits.default(for:) when the IRS limit changes or doesn't apply.
     var contributionLimitOverride: Decimal?
 

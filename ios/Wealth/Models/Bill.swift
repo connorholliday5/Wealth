@@ -33,6 +33,20 @@ enum BillFrequency: String, Codable, CaseIterable, Identifiable, Hashable {
         case .annual: return 1
         }
     }
+
+    /// The next occurrence after `date` for this cadence. Semimonthly is
+    /// approximated as 15 days since we don't store two anchor days.
+    func nextDate(after date: Date) -> Date {
+        let calendar = Calendar.current
+        switch self {
+        case .weekly: return calendar.date(byAdding: .day, value: 7, to: date) ?? date
+        case .biweekly: return calendar.date(byAdding: .day, value: 14, to: date) ?? date
+        case .semimonthly: return calendar.date(byAdding: .day, value: 15, to: date) ?? date
+        case .monthly: return calendar.date(byAdding: .month, value: 1, to: date) ?? date
+        case .quarterly: return calendar.date(byAdding: .month, value: 3, to: date) ?? date
+        case .annual: return calendar.date(byAdding: .year, value: 1, to: date) ?? date
+        }
+    }
 }
 
 enum BillKind: String, Codable, CaseIterable, Identifiable, Hashable {
@@ -100,5 +114,30 @@ final class Bill {
 
     var monthlyEquivalent: Decimal {
         amount * Decimal(frequency.occurrencesPerYear / 12)
+    }
+
+    /// Rolls the due date forward past any missed occurrences, keeping "due
+    /// today" intact (only dates before the start of today are considered
+    /// missed). Returns true if the date moved.
+    @discardableResult
+    func advancePastDue(asOf now: Date = .now) -> Bool {
+        let startOfToday = Calendar.current.startOfDay(for: now)
+        var advanced = false
+        var safety = 0
+        while nextDueDate < startOfToday && safety < 1000 {
+            nextDueDate = frequency.nextDate(after: nextDueDate)
+            advanced = true
+            safety += 1
+        }
+        return advanced
+    }
+
+    /// Marks the current occurrence paid: advances the due date one cycle and,
+    /// if this payment pays down a linked debt, reduces that balance.
+    func markPaid() {
+        nextDueDate = frequency.nextDate(after: nextDueDate)
+        if let account = linkedAccount, account.type.isLiability {
+            account.balance = max(0, account.balance - amount)
+        }
     }
 }

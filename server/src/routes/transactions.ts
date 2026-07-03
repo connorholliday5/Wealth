@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { plaidClient } from "../plaidClient.js";
-import { getAccessToken, getCursor, setCursor } from "../db.js";
+import { clearCursor, getAccessToken, getCursor, setCursor } from "../db.js";
 import { handlePlaidError } from "./link.js";
 
 export const transactionsRouter = Router();
@@ -20,6 +20,11 @@ transactionsRouter.get("/sync", async (req, res) => {
   }
 
   try {
+    // ?restart=1 re-sends full history — used when the app has no local
+    // transactions for this item (fresh install / re-download).
+    if (req.query.restart === "1") {
+      clearCursor(itemId);
+    }
     let cursor = getCursor(itemId);
     let added: unknown[] = [];
     let modified: unknown[] = [];

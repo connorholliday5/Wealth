@@ -13,6 +13,23 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// When APP_SHARED_SECRET is set, every /api route requires the same value in the
+// x-wealth-key header (the iOS app sends it from Settings > Server). Without the
+// env var the API stays open — fine for localhost development, not for a deployed
+// server. /health stays public for uptime checks.
+const sharedSecret = process.env.APP_SHARED_SECRET;
+if (sharedSecret) {
+  app.use("/api", (req, res, next) => {
+    if (req.header("x-wealth-key") === sharedSecret) {
+      next();
+      return;
+    }
+    res.status(401).json({ error: "Unauthorized: missing or wrong x-wealth-key header" });
+  });
+} else {
+  console.warn("APP_SHARED_SECRET is not set — the API is unauthenticated. Set it before deploying.");
+}
 app.use("/api/link", linkRouter);
 app.use("/api/accounts", accountsRouter);
 app.use("/api/transactions", transactionsRouter);

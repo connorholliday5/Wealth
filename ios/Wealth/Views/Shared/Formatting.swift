@@ -7,6 +7,20 @@ extension Decimal {
         formatter.currencyCode = "USD"
         return formatter.string(from: self as NSDecimalNumber) ?? "$0.00"
     }
+
+    /// Parses user-typed amounts respecting the device locale (so "1.234,56"
+    /// works on a European keyboard), falling back to plain parsing.
+    init?(userInput: String) {
+        let trimmed = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let localized = Decimal(string: trimmed, locale: .current), localized.isFinite {
+            self = localized
+        } else if let plain = Decimal(string: trimmed), plain.isFinite {
+            self = plain
+        } else {
+            return nil
+        }
+    }
 }
 
 extension Date {

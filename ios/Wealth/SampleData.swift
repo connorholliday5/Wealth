@@ -6,7 +6,7 @@ import SwiftData
 enum SampleData {
     @MainActor
     static var container: ModelContainer = {
-        let schema = Schema([Account.self, Transaction.self, Bill.self])
+        let schema = Schema([Account.self, Transaction.self, Bill.self, NetWorthSnapshot.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try! ModelContainer(for: schema, configurations: [configuration])
         let context = container.mainContext
@@ -67,6 +67,12 @@ enum SampleData {
             let transaction = Transaction(date: .now.addingDays(daysAgo), amount: amount, merchantName: merchant, category: category)
             transaction.account = checking
             context.insert(transaction)
+        }
+
+        // Net-worth history for the Dashboard chart: a gentle upward trend.
+        for weeksAgo in stride(from: 12, through: 0, by: -1) {
+            let value = Decimal(43_000 + (12 - weeksAgo) * 450)
+            context.insert(NetWorthSnapshot(date: .now.addingDays(-7 * weeksAgo), value: value))
         }
 
         return container

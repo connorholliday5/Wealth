@@ -80,13 +80,28 @@ struct AddAccountView: View {
                 for account in linked {
                     modelContext.insert(account)
                 }
+                // Pull transaction history, APRs, and loan terms for the new
+                // accounts right away rather than waiting for the next auto-sync.
+                let context = modelContext
+                Task { await SyncEngine.shared.syncAll(context: context) }
                 dismiss()
+            }
+            .alert(
+                "Couldn't Link Account",
+                isPresented: Binding(
+                    get: { plaidLinkManager.errorMessage != nil },
+                    set: { if !$0 { plaidLinkManager.errorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(plaidLinkManager.errorMessage ?? "")
             }
         }
     }
 
     private func save() {
-        guard let balance = Decimal(string: balanceText) else { return }
+        guard let balance = Decimal(userInput: balanceText) else { return }
         let account = Account(
             name: name,
             type: type,
@@ -98,13 +113,14 @@ struct AddAccountView: View {
             account.interestRate = rate
             account.apr = rate
         }
-        if let payment = Decimal(string: minimumPaymentText) {
+        if let payment = Decimal(userInput: minimumPaymentText) {
             account.minimumPayment = payment
         }
         if type.isWorkBenefit {
             account.employerName = employerName.isEmpty ? nil : employerName
             account.employerMatchPercent = Double(employerMatchText)
-            account.yearToDateContribution = Decimal(string: ytdContributionText)
+            account.yearToDateContribution = Decimal(userInput: ytdContributionText)
+            account.contributionYear = Calendar.current.component(.year, from: .now)
             account.contributionLimitOverride = ContributionLimits.defaultAnnualLimit(for: type)
         }
         modelContext.insert(account)

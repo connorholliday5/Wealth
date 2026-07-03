@@ -42,17 +42,31 @@ struct BillsListView: View {
                                 Text("\(bill.kind.displayName) · \(bill.frequency.displayName)")
                                 Spacer()
                                 Text(bill.nextDueDate.dayCountdownString)
+                                    .foregroundStyle(bill.nextDueDate < Calendar.current.startOfDay(for: .now) ? .red : .secondary)
                             }
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         }
-                    }
-                    .onDelete { offsets in
-                        for index in offsets {
-                            NotificationManager.shared.cancel(for: bills[index])
-                            modelContext.delete(bills[index])
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                bill.markPaid()
+                                NotificationManager.shared.schedule(for: bill)
+                            } label: {
+                                Label("Mark Paid", systemImage: "checkmark.circle.fill")
+                            }
+                            .tint(.green)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                NotificationManager.shared.cancel(for: bill)
+                                modelContext.delete(bill)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
+                } footer: {
+                    Text("Swipe right on a bill to mark it paid — the due date rolls to the next cycle, and payments on loans or cards reduce that balance.")
                 }
             }
             .navigationTitle("Bills")

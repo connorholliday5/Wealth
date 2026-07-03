@@ -16,7 +16,8 @@ enum AdvisorAPIClient {
     static func isAvailable() async -> Bool {
         struct Response: Decodable { let available: Bool }
         do {
-            let (data, _) = try await URLSession.shared.data(from: baseURL.appendingPathComponent("/api/advisor/available"))
+            let request = ServerConfig.request(path: "/api/advisor/available")
+            let (data, _) = try await URLSession.shared.data(for: request)
             return (try? JSONDecoder().decode(Response.self, from: data))?.available ?? false
         } catch {
             return false
@@ -33,10 +34,11 @@ enum AdvisorAPIClient {
             let error: String?
         }
 
-        var request = URLRequest(url: baseURL.appendingPathComponent("/api/advisor/chat"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(Request(system: system, messages: messages))
+        let request = ServerConfig.request(
+            path: "/api/advisor/chat",
+            method: "POST",
+            jsonBody: try JSONEncoder().encode(Request(system: system, messages: messages))
+        )
 
         let (data, _) = try await URLSession.shared.data(for: request)
         let decoded = try JSONDecoder().decode(Response.self, from: data)
