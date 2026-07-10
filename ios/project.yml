@@ -23,16 +23,25 @@ targets:
       # @available(iOS 26.0, *) and check SystemLanguageModel availability at runtime.
       - sdk: FoundationModels.framework
         weak: true
+    # xcodegen writes this Info.plist at generate time. NSAllowsLocalNetworking
+    # lets a physical iPhone reach the Wealth server on your Mac over plain
+    # http on the same Wi-Fi (e.g. http://192.168.x.x:8787) — iOS blocks
+    # non-HTTPS to anything except localhost otherwise. Internet servers still
+    # require HTTPS.
+    info:
+      path: Wealth/Info.plist
+      properties:
+        CFBundleDisplayName: Wealth
+        UILaunchScreen: {}
+        NSFaceIDUsageDescription: "Wealth uses Face ID to keep your accounts and balances private."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.connorholliday.wealth.app
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Wealth
-        INFOPLIST_KEY_NSFaceIDUsageDescription: "Wealth uses Face ID to keep your accounts and balances private."
     scheme:
       testTargets:
         - WealthTests
