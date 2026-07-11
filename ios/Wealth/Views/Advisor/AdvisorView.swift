@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 struct AdvisorView: View {
     @Query private var accounts: [Account]
@@ -62,9 +64,11 @@ struct AdvisorView: View {
         }
     }
 
-    /// Routes to the on-device or cloud chat based on the user's preference and
-    /// what the device actually supports.
+    /// Routes to the on-device or cloud chat based on the user's preference,
+    /// what the device supports, and whether the app was even built with a
+    /// toolchain that has FoundationModels (older Xcode versions don't).
     @ViewBuilder private var chatDestination: some View {
+        #if canImport(FoundationModels)
         switch AdvisorProvider(rawValue: providerRaw) ?? .auto {
         case .cloud:
             CloudChatView()
@@ -81,6 +85,9 @@ struct AdvisorView: View {
                 CloudChatView()
             }
         }
+        #else
+        CloudChatView()
+        #endif
     }
 
     private func color(for severity: InsightSeverity) -> Color {

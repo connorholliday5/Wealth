@@ -1,3 +1,7 @@
+// Compiles only when the SDK ships FoundationModels (Xcode 26+); see
+// AIAdvisorManager.swift. Older toolchains build the app without this screen.
+#if canImport(FoundationModels)
+
 import SwiftUI
 import SwiftData
 import FoundationModels
@@ -48,3 +52,5 @@ struct AIChatView: View {
         }
     }
 }
+
+#endif

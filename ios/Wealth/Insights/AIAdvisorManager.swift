@@ -1,3 +1,8 @@
+// This whole file compiles only when the SDK ships Apple's FoundationModels
+// framework (Xcode 26+ / iOS 26 SDK). On older Xcode versions the app builds
+// without on-device chat and AdvisorView routes to the cloud advisor instead.
+#if canImport(FoundationModels)
+
 import Foundation
 import FoundationModels
 
@@ -36,3 +41,5 @@ final class AIAdvisorManager: ObservableObject {
         }
     }
 }
+
+#endif
