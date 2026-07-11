@@ -58,7 +58,7 @@ struct AccountDetailView: View {
             if account.type.category == .loan || account.type.category == .credit {
                 Section("Rate & Payment") {
                     if let rate = account.interestRate ?? account.apr {
-                        LabeledContent("Interest rate", value: "\(rate, specifier: "%.2f")% APR")
+                        LabeledContent("Interest rate", value: String(format: "%.2f%% APR", rate))
                     }
                     if let payment = account.minimumPayment {
                         LabeledContent("Minimum payment", value: payment.currencyString)
@@ -128,7 +128,7 @@ private struct ContributionSection: View {
                 LabeledContent("Employer", value: employer)
             }
             if let match = account.employerMatchPercent {
-                LabeledContent("Employer match", value: "\(match, specifier: "%.1f")%")
+                LabeledContent("Employer match", value: String(format: "%.1f%%", match))
             }
         }
     }

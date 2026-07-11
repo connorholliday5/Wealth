@@ -29,7 +29,9 @@ final class PlaidLinkManager: ObservableObject {
         }
         configuration.onExit = { [weak self] exit in
             if let error = exit.error {
-                self?.errorMessage = error.errorDisplayMessage
+                // String(describing:) compiles against any LinkKit version —
+                // the error type's members have shifted across releases.
+                self?.errorMessage = "Bank linking didn't finish: \(String(describing: error))"
             }
         }
 
