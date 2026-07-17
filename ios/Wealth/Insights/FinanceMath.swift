@@ -40,4 +40,14 @@ enum FinanceMath {
     static func monthsLeftInYear(asOf date: Date = .now) -> Int {
         max(1, 12 - Calendar.current.component(.month, from: date) + 1)
     }
+
+    /// The monthly payment we can assume for a debt: the sum of bills linked to
+    /// it (normalized to monthly), falling back to its stored minimum payment.
+    static func effectiveMonthlyPayment(for account: Account, bills: [Bill]) -> Decimal {
+        let linked = bills
+            .filter { $0.linkedAccount?.id == account.id }
+            .reduce(Decimal(0)) { $0 + $1.monthlyEquivalent }
+        if linked > 0 { return linked }
+        return account.minimumPayment ?? 0
+    }
 }

@@ -98,9 +98,14 @@ first open.
   Overdue bills roll forward automatically at launch (`MaintenanceEngine`);
   swipe right to **mark paid** — the due date advances a cycle and payments on
   a linked loan/card reduce that balance.
-- **Debt payoff planner** (`ios/Wealth/Views/Bills/DebtPayoffView.swift`):
-  avalanche (highest APR first) or snowball (smallest balance first) ordering
-  across every loan/credit card, with an extra-payment slider.
+- **Debt payoff planner** (`ios/Wealth/Views/Bills/DebtPayoffView.swift`,
+  `Insights/LoanPayoffCalculator.swift`): avalanche (highest APR first) or
+  snowball (smallest balance first) ordering across every loan/credit card,
+  with an extra-payment field. A month-by-month simulation shows a **debt-free
+  date**, a per-loan **payoff date** and total interest, and the payment-rollover
+  effect (each cleared debt's payment cascades onto the next). Each loan's detail
+  screen shows its own payoff date too. Payment amounts come from a linked bill
+  or the account's minimum payment.
 - **Work benefits**: 401(k) and HSA accounts track employer name, employer
   match %, and year-to-date contribution against the IRS annual limit
   (`ContributionLimits.swift` — defaults are editable per-account since these

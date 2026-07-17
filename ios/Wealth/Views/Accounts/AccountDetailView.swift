@@ -3,7 +3,23 @@ import SwiftData
 
 struct AccountDetailView: View {
     @Bindable var account: Account
+    @Query private var bills: [Bill]
     @State private var balanceText = ""
+
+    /// Payoff projection for this single debt at its own payment (no extra).
+    private var payoffLine: DebtPayoffResult.Line? {
+        guard account.type.isLiability, account.balance > 0 else { return nil }
+        let payment = FinanceMath.effectiveMonthlyPayment(for: account, bills: bills)
+        guard payment > 0 else { return nil }
+        let input = DebtInput(
+            id: account.id,
+            name: account.name,
+            balance: account.balance,
+            annualRatePercent: account.interestRate ?? account.apr ?? 0,
+            monthlyPayment: payment
+        )
+        return LoanPayoffCalculator.simulate(orderedDebts: [input], extra: 0).lines.first
+    }
 
     private var recentTransactions: [Transaction] {
         account.transactions
@@ -56,12 +72,28 @@ struct AccountDetailView: View {
             }
 
             if account.type.category == .loan || account.type.category == .credit {
-                Section("Rate & Payment") {
+                Section {
                     if let rate = account.interestRate ?? account.apr {
                         LabeledContent("Interest rate", value: String(format: "%.2f%% APR", rate))
                     }
                     if let payment = account.minimumPayment {
                         LabeledContent("Minimum payment", value: payment.currencyString)
+                    }
+                    if let line = payoffLine, let date = line.payoffDate, let months = line.months {
+                        LabeledContent("Paid off") {
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(date.formatted(.dateTime.month(.abbreviated).year()))
+                                Text("\(monthsDurationString(months)) · \(line.totalInterest.currencyString) interest")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Rate & Payment")
+                } footer: {
+                    if payoffLine == nil && account.balance > 0 {
+                        Text("Add a minimum payment (or link a bill) to project a payoff date.")
                     }
                 }
             }

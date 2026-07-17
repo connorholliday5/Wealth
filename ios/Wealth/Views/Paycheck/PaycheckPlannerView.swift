@@ -53,7 +53,7 @@ struct PaycheckPlannerView: View {
                     }
                 }
 
-                Section("Recommended Plan") {
+                Section {
                     ForEach(plan.lines) { line in
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: line.category.symbolName)
@@ -73,6 +73,8 @@ struct PaycheckPlannerView: View {
                         }
                         .padding(.vertical, 2)
                     }
+                } header: {
+                    Text("Recommended Plan")
                 } footer: {
                     if plan.isFeasible {
                         Text("Allocated \(plan.totalAllocated.currencyString) of "

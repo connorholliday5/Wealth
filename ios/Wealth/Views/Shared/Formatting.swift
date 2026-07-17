@@ -23,6 +23,16 @@ extension Decimal {
     }
 }
 
+/// "3 yr 2 mo", "8 mo", "now" — for payoff durations.
+func monthsDurationString(_ months: Int) -> String {
+    if months <= 0 { return "now" }
+    let years = months / 12
+    let remainder = months % 12
+    if years == 0 { return "\(months) mo" }
+    if remainder == 0 { return years == 1 ? "1 yr" : "\(years) yr" }
+    return "\(years) yr \(remainder) mo"
+}
+
 extension Date {
     var dayCountdownString: String {
         let days = Calendar.current.dateComponents([.day], from: .now, to: self).day ?? 0

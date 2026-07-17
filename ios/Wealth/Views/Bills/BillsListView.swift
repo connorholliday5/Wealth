@@ -22,7 +22,7 @@ struct BillsListView: View {
                     }
                 }
 
-                Section("Bills & Payments") {
+                Section {
                     ForEach(bills) { bill in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
@@ -65,6 +65,8 @@ struct BillsListView: View {
                             }
                         }
                     }
+                } header: {
+                    Text("Bills & Payments")
                 } footer: {
                     Text("Swipe right on a bill to mark it paid — the due date rolls to the next cycle, and payments on loans or cards reduce that balance.")
                 }
