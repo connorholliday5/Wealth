@@ -60,9 +60,18 @@ final class NotificationManager {
     }
 
     private func trigger(for date: Date, hour: Int) -> UNCalendarNotificationTrigger? {
-        guard date > .now else { return nil }
         var components = Calendar.current.dateComponents([.year, .month, .day], from: date)
         components.hour = hour
+        // Guard on the COMPOSED fire time, not the raw date: a bill due today
+        // processed after 9am would otherwise produce a past trigger that iOS
+        // silently drops. Fall back to one hour from now for today's bills.
+        guard let fireDate = Calendar.current.date(from: components) else { return nil }
+        if fireDate <= .now {
+            let isToday = Calendar.current.isDate(date, inSameDayAs: .now)
+            guard isToday, let soon = Calendar.current.date(byAdding: .hour, value: 1, to: .now) else { return nil }
+            let soonComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: soon)
+            return UNCalendarNotificationTrigger(dateMatching: soonComponents, repeats: false)
+        }
         return UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
     }
 }

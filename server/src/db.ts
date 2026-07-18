@@ -1,5 +1,7 @@
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const keyHex = process.env.TOKEN_ENCRYPTION_KEY;
 if (!keyHex || keyHex.length !== 64) {
@@ -7,7 +9,11 @@ if (!keyHex || keyHex.length !== 64) {
 }
 const key = Buffer.from(keyHex, "hex");
 
-const db = new Database("tokens.sqlite");
+// Anchor the DB next to the server code, NOT the process working directory —
+// otherwise starting the server from a different folder silently creates a
+// fresh empty DB and every linked bank appears to vanish.
+const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const db = new Database(process.env.TOKENS_DB_PATH ?? path.join(serverRoot, "tokens.sqlite"));
 db.exec(`
   CREATE TABLE IF NOT EXISTS items (
     item_id TEXT PRIMARY KEY,

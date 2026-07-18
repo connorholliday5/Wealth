@@ -24,6 +24,9 @@ struct BillsListView: View {
 
                 Section {
                     ForEach(bills) { bill in
+                        NavigationLink {
+                            EditBillView(bill: bill)
+                        } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Text(bill.name)
@@ -46,6 +49,7 @@ struct BillsListView: View {
                             }
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        }
                         }
                         .swipeActions(edge: .leading, allowsFullSwipe: true) {
                             Button {

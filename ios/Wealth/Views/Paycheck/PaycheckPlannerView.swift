@@ -7,18 +7,30 @@ import SwiftData
 struct PaycheckPlannerView: View {
     @Query private var accounts: [Account]
     @Query private var bills: [Bill]
+    @Query private var transactions: [Transaction]
+    @Query private var goals: [SavingsGoal]
 
-    @State private var amountText = ""
-    @State private var payFrequency: PayFrequency = .biweekly
+    // Remembered between visits so you don't retype your paycheck every time.
+    @AppStorage("lastPaycheckAmount") private var amountText = ""
+    @AppStorage("payFrequency") private var payFrequencyRaw = PayFrequency.biweekly.rawValue
+
+    private var payFrequency: Binding<PayFrequency> {
+        Binding(
+            get: { PayFrequency(rawValue: payFrequencyRaw) ?? .biweekly },
+            set: { payFrequencyRaw = $0.rawValue }
+        )
+    }
 
     private var paycheck: Decimal { Decimal(userInput: amountText) ?? 0 }
 
     private var plan: PaycheckPlan {
         PaycheckAllocationEngine.plan(
             paycheck: paycheck,
-            payFrequency: payFrequency,
+            payFrequency: payFrequency.wrappedValue,
             accounts: accounts,
-            bills: bills
+            bills: bills,
+            transactions: transactions,
+            goals: goals
         )
     }
 
@@ -27,7 +39,7 @@ struct PaycheckPlannerView: View {
             Section("Your Paycheck") {
                 TextField("Amount (after tax)", text: $amountText)
                     .keyboardType(.decimalPad)
-                Picker("Pay frequency", selection: $payFrequency) {
+                Picker("Pay frequency", selection: payFrequency) {
                     ForEach(PayFrequency.allCases) { freq in
                         Text(freq.displayName).tag(freq)
                     }

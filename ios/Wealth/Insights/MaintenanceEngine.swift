@@ -19,8 +19,17 @@ enum MaintenanceEngine {
     /// Advances any bill whose due date has fully passed to its next occurrence
     /// and refreshes its reminders. Without this, "upcoming bills", the paycheck
     /// planner's reserve, and notifications all decay as due dates go stale.
+    /// Autopay bills that pay down a manually-tracked debt also credit the
+    /// skipped payments (Plaid-linked balances are corrected by sync instead).
     static func rollOverdueBills(_ bills: [Bill], asOf now: Date = .now) {
-        for bill in bills where bill.advancePastDue(asOf: now) {
+        for bill in bills {
+            let skippedCycles = bill.advancePastDue(asOf: now)
+            guard skippedCycles > 0 else { continue }
+            if bill.autopay,
+               let account = bill.linkedAccount,
+               account.type.isLiability, account.isManual {
+                account.balance = max(0, account.balance - bill.amount * Decimal(skippedCycles))
+            }
             NotificationManager.shared.schedule(for: bill)
         }
     }
@@ -50,7 +59,8 @@ enum MaintenanceEngine {
         let startOfToday = Calendar.current.startOfDay(for: now)
 
         let descriptor = FetchDescriptor<NetWorthSnapshot>(
-            predicate: #Predicate { $0.date >= startOfToday }
+            predicate: #Predicate { $0.date >= startOfToday },
+            sortBy: [SortDescriptor(\.date, order: .forward)]
         )
         if let today = try? context.fetch(descriptor).first {
             today.value = netWorth

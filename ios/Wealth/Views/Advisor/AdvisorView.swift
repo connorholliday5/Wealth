@@ -8,10 +8,15 @@ struct AdvisorView: View {
     @Query private var accounts: [Account]
     @Query private var bills: [Bill]
     @Query private var transactions: [Transaction]
+    @Query private var budgets: [Budget]
     @AppStorage("advisorProvider") private var providerRaw = AdvisorProvider.auto.rawValue
 
     private var insights: [Insight] {
-        InsightsEngine.generate(accounts: accounts, bills: bills, transactions: transactions)
+        InsightsEngine.generate(accounts: accounts, bills: bills, transactions: transactions, budgets: budgets)
+    }
+
+    private var recommendations: [AccountRecommendation] {
+        AccountRecommendationEngine.recommend(accounts: accounts, bills: bills, transactions: transactions)
     }
 
     var body: some View {
@@ -35,6 +40,30 @@ struct AdvisorView: View {
                     }
                 } footer: {
                     Text("A priority-waterfall recommendation for where each paycheck should go, computed from your accounts and bills.")
+                }
+
+                if !recommendations.isEmpty {
+                    Section {
+                        ForEach(recommendations) { recommendation in
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: recommendation.symbolName)
+                                    .foregroundStyle(.tint)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(recommendation.title)
+                                        .font(.headline)
+                                    Text(recommendation.reason)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    } header: {
+                        Text("Accounts Worth Opening")
+                    } footer: {
+                        Text("Based only on which account types you're missing — general guidance, not personalized financial advice.")
+                    }
                 }
 
                 if insights.isEmpty {

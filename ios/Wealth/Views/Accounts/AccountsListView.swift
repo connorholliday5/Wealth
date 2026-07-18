@@ -32,7 +32,7 @@ struct AccountsListView: View {
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
-                                    modelContext.delete(account)
+                                    delete(account)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -57,6 +57,20 @@ struct AccountsListView: View {
             }
             .sheet(isPresented: $showingAddAccount) {
                 AddAccountView()
+            }
+        }
+    }
+
+    /// Deletes locally and — if this was the last account of a linked
+    /// institution — tells the server to revoke the Plaid connection so the
+    /// bank isn't left connected (and billed) forever.
+    private func delete(_ account: Account) {
+        let itemId = account.plaidItemId
+        modelContext.delete(account)
+        if let itemId {
+            let stillLinked = accounts.contains { $0.plaidItemId == itemId && $0.id != account.id }
+            if !stillLinked {
+                Task { try? await PlaidAPIClient.removeItem(itemId: itemId) }
             }
         }
     }

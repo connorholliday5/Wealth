@@ -42,6 +42,15 @@ enum PlaidAPIClient {
         try await get(path: "/api/liabilities?itemId=\(itemId)")
     }
 
+    /// Disconnects an institution: the server revokes the Plaid item and
+    /// deletes its stored token/cursor. Called when the user deletes the last
+    /// local account of that institution.
+    static func removeItem(itemId: String) async throws {
+        let request = ServerConfig.request(path: "/api/link/item/\(itemId)", method: "DELETE")
+        let (_, response) = try await URLSession.shared.data(for: request)
+        try Self.checkStatus(response)
+    }
+
     // MARK: - Plumbing
 
     private static func post<Body: Encodable, Response: Decodable>(path: String, body: Body) async throws -> Response {
@@ -102,6 +111,8 @@ struct PlaidAccount: Decodable {
     struct Balances: Decodable {
         let current: Double?
         let available: Double?
+        /// Credit limit for cards — powers the utilization insight.
+        let limit: Double?
     }
 
     enum CodingKeys: String, CodingKey {

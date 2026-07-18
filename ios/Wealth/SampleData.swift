@@ -6,7 +6,7 @@ import SwiftData
 enum SampleData {
     @MainActor
     static var container: ModelContainer = {
-        let schema = Schema([Account.self, Transaction.self, Bill.self, NetWorthSnapshot.self])
+        let schema = Schema([Account.self, Transaction.self, Bill.self, NetWorthSnapshot.self, Budget.self, SavingsGoal.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try! ModelContainer(for: schema, configurations: [configuration])
         let context = container.mainContext
@@ -19,7 +19,8 @@ enum SampleData {
 
         let rothIRA = Account(name: "Roth IRA", type: .rothIRA, balance: 18_400)
         rothIRA.yearToDateContribution = 3_000
-        rothIRA.contributionLimitOverride = ContributionLimits.defaultAnnualLimit(for: .rothIRA)
+        // No contributionLimitOverride: the account tracks the current tax
+        // year's IRS limit automatically. Overrides are for special cases only.
 
         let fourOhOneK = Account(name: "Acme Corp 401(k)", type: .fourOhOneK, balance: 42_000)
         fourOhOneK.employerName = "Acme Corp"
@@ -68,6 +69,10 @@ enum SampleData {
             transaction.account = checking
             context.insert(transaction)
         }
+
+        context.insert(Budget(category: .dining, monthlyLimit: 250))
+        context.insert(Budget(category: .shopping, monthlyLimit: 200))
+        context.insert(SavingsGoal(name: "Japan Trip", targetAmount: 3_000, savedAmount: 1_100, targetDate: .now.addingDays(240)))
 
         // Net-worth history for the Dashboard chart: a gentle upward trend.
         for weeksAgo in stride(from: 12, through: 0, by: -1) {

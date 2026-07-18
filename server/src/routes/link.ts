@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { CountryCode, Products } from "plaid";
 import { plaidClient } from "../plaidClient.js";
-import { saveItem, deleteItem } from "../db.js";
+import { saveItem, deleteItem, getAccessToken, clearCursor } from "../db.js";
 
 export const linkRouter = Router();
 
@@ -11,7 +11,11 @@ linkRouter.post("/token/create", async (req, res) => {
     const response = await plaidClient.linkTokenCreate({
       user: { client_user_id: "wealth-app-single-user" },
       client_name: "Wealth",
-      products: [Products.Transactions, Products.Liabilities, Products.Investments],
+      // Only Transactions is REQUIRED — listing Liabilities/Investments as
+      // required products would hide every bank that doesn't support them
+      // from Plaid Link entirely. Optional products attach when available.
+      products: [Products.Transactions],
+      optional_products: [Products.Liabilities, Products.Investments],
       country_codes: [CountryCode.Us],
       language: "en",
     });
@@ -55,13 +59,37 @@ linkRouter.post("/token/exchange", async (req, res) => {
   }
 });
 
-linkRouter.delete("/item/:itemId", (req, res) => {
-  deleteItem(req.params.itemId);
+// Disconnects an institution completely: revokes the item at Plaid (stops
+// Plaid billing and data access), then removes the stored token and cursor.
+linkRouter.delete("/item/:itemId", async (req, res) => {
+  const itemId = req.params.itemId;
+  const accessToken = getAccessToken(itemId);
+  if (accessToken) {
+    try {
+      await plaidClient.itemRemove({ access_token: accessToken });
+    } catch (err) {
+      // Log but continue — the item may already be revoked at Plaid's end,
+      // and local cleanup should happen regardless.
+      logPlaidError("itemRemove", err);
+    }
+  }
+  deleteItem(itemId);
+  clearCursor(itemId);
   res.status(204).send();
 });
 
-export function handlePlaidError(res: import("express").Response, err: unknown) {
+function logPlaidError(context: string, err: unknown) {
   const anyErr = err as { response?: { data?: unknown }; message?: string };
-  console.error("Plaid error:", anyErr.response?.data ?? anyErr.message ?? err);
-  res.status(502).json({ error: "Plaid request failed", detail: anyErr.response?.data });
+  console.error(`Plaid error (${context}):`, anyErr.response?.data ?? anyErr.message ?? err);
+}
+
+export function handlePlaidError(res: import("express").Response, err: unknown) {
+  logPlaidError("request", err);
+  const anyErr = err as { response?: { data?: { error_code?: string } } };
+  // Upstream detail stays in the server log; clients get only the error code
+  // (needed to detect ITEM_LOGIN_REQUIRED), never Plaid's full payload.
+  res.status(502).json({
+    error: "Plaid request failed",
+    code: anyErr.response?.data?.error_code ?? null,
+  });
 }

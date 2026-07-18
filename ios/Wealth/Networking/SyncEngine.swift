@@ -46,27 +46,40 @@ final class SyncEngine: ObservableObject {
             accountsByPlaidId[account.plaidAccountId!] = account
         }
 
+        var failures: [String] = []
+
         do {
             try await syncBalances(accountsByPlaidId: accountsByPlaidId)
+        } catch {
+            failures.append("Balances: \(error.localizedDescription)")
+        }
 
-            let itemIds = Set(linkedAccounts.compactMap(\.plaidItemId))
-            for itemId in itemIds {
-                // Liability details are best-effort: not every institution or
-                // account type supports them, and that shouldn't fail the sync.
-                if let liabilities = try? await PlaidAPIClient.fetchLiabilities(itemId: itemId) {
-                    Self.apply(liabilities: liabilities, accountsByPlaidId: accountsByPlaidId)
-                }
-                try await syncTransactions(itemId: itemId, accountsByPlaidId: accountsByPlaidId, context: context)
+        // Each institution syncs independently — one bank needing re-login
+        // shouldn't block the others from updating.
+        let itemIds = Set(linkedAccounts.compactMap(\.plaidItemId))
+        for itemId in itemIds {
+            // Liability details are best-effort: not every institution or
+            // account type supports them, and that shouldn't fail the sync.
+            if let liabilities = try? await PlaidAPIClient.fetchLiabilities(itemId: itemId) {
+                Self.apply(liabilities: liabilities, accountsByPlaidId: accountsByPlaidId)
             }
+            do {
+                try await syncTransactions(itemId: itemId, accountsByPlaidId: accountsByPlaidId, context: context)
+            } catch {
+                let name = linkedAccounts.first { $0.plaidItemId == itemId }?.institutionName ?? "One bank"
+                failures.append("\(name): \(error.localizedDescription)")
+            }
+        }
 
-            let now = Date.now
-            for account in linkedAccounts { account.lastSynced = now }
-            try? context.save()
+        let now = Date.now
+        for account in linkedAccounts { account.lastSynced = now }
+        try? context.save()
 
+        if failures.isEmpty {
             lastSyncedAt = now
             lastSyncError = nil
-        } catch {
-            lastSyncError = error.localizedDescription
+        } else {
+            lastSyncError = failures.joined(separator: " · ")
         }
     }
 
@@ -76,11 +89,21 @@ final class SyncEngine: ObservableObject {
         let items = try await PlaidAPIClient.fetchAccounts()
         for item in items {
             for plaidAccount in item.accounts {
-                guard let local = accountsByPlaidId[plaidAccount.accountId],
-                      let current = plaidAccount.balances.current else { continue }
-                local.balance = Decimal(current)
+                guard let local = accountsByPlaidId[plaidAccount.accountId] else { continue }
+                if let current = plaidAccount.balances.current {
+                    local.balance = Self.money(current)
+                }
+                if local.type == .creditCard, let limit = plaidAccount.balances.limit, limit > 0 {
+                    local.creditLimit = Self.money(limit)
+                }
             }
         }
+    }
+
+    /// Converts a JSON-decoded Double into a money Decimal by rounding to
+    /// cents via string, avoiding binary-float residue like 42.500000000000004.
+    static func money(_ value: Double) -> Decimal {
+        Decimal(string: String(format: "%.2f", value)) ?? Decimal(value)
     }
 
     // MARK: - Liabilities (APRs, loan terms)
@@ -92,17 +115,17 @@ final class SyncEngine: ObservableObject {
             let aprs = card.aprs ?? []
             let purchase = aprs.first { $0.aprType == "purchase_apr" } ?? aprs.first
             if let apr = purchase?.aprPercentage { account.apr = apr }
-            if let minimum = card.minimumPaymentAmount { account.minimumPayment = Decimal(minimum) }
+            if let minimum = card.minimumPaymentAmount { account.minimumPayment = Self.money(minimum) }
         }
         for loan in liabilities.student ?? [] {
             guard let id = loan.accountId, let account = accountsByPlaidId[id] else { continue }
             if let rate = loan.interestRatePercentage { account.interestRate = rate }
-            if let minimum = loan.minimumPaymentAmount { account.minimumPayment = Decimal(minimum) }
+            if let minimum = loan.minimumPaymentAmount { account.minimumPayment = Self.money(minimum) }
         }
         for mortgage in liabilities.mortgage ?? [] {
             guard let id = mortgage.accountId, let account = accountsByPlaidId[id] else { continue }
             if let rate = mortgage.interestRate?.percentage { account.interestRate = rate }
-            if let payment = mortgage.nextMonthlyPayment { account.minimumPayment = Decimal(payment) }
+            if let payment = mortgage.nextMonthlyPayment { account.minimumPayment = Self.money(payment) }
         }
     }
 
@@ -122,10 +145,19 @@ final class SyncEngine: ObservableObject {
             if let pid = transaction.plaidTransactionId { byPlaidId[pid] = transaction }
         }
 
-        // Fresh install (no imported transactions at all): ask the server to
-        // replay full history for this institution.
-        let restart = byPlaidId.isEmpty
-        let sync = try await PlaidAPIClient.syncTransactions(itemId: itemId, restart: restart)
+        // Fresh install for THIS institution: replay its full history. Scoped
+        // per item — a global "any transactions exist" check would let the
+        // first-processed bank replay and silently skip history for the rest.
+        let itemAccountIds = Set(
+            accountsByPlaidId.values
+                .filter { $0.plaidItemId == itemId }
+                .compactMap(\.plaidAccountId)
+        )
+        let hasHistoryForItem = existing.contains { transaction in
+            guard let accountPlaidId = transaction.account?.plaidAccountId else { return false }
+            return itemAccountIds.contains(accountPlaidId)
+        }
+        let sync = try await PlaidAPIClient.syncTransactions(itemId: itemId, restart: !hasHistoryForItem)
 
         for wire in sync.added + sync.modified {
             guard let account = accountsByPlaidId[wire.accountId] else { continue }
@@ -143,7 +175,7 @@ final class SyncEngine: ObservableObject {
             }()
 
             // Plaid: positive = money out. Local model: positive = money in.
-            transaction.amount = Decimal(-wire.amount)
+            transaction.amount = Self.money(-wire.amount)
             transaction.date = Self.parseDate(wire.date) ?? transaction.date
             transaction.merchantName = wire.merchantName ?? wire.name ?? "Unknown"
             transaction.pending = wire.pending ?? false

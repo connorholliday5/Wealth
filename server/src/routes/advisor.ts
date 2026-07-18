@@ -9,9 +9,10 @@ export const advisorRouter = Router();
 // server; the app only ever sees the model's reply text.
 const client = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 
-// Personal-use default. Swap to "claude-haiku-4-5" if you want lower cost per
-// message at some loss of nuance.
-const MODEL = "claude-opus-4-8";
+// The cloud advisor is dormant by default (no API key = disabled) — the app's
+// deterministic rules engine is the primary advisor. If you ever do enable
+// this, the default model is the cheapest one; override via ADVISOR_MODEL.
+const MODEL = process.env.ADVISOR_MODEL ?? "claude-haiku-4-5";
 
 advisorRouter.get("/available", (_req, res) => {
   res.json({ available: client !== null });

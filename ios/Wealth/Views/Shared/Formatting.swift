@@ -23,6 +23,14 @@ extension Decimal {
     }
 }
 
+extension Double {
+    /// Locale-aware parse for percentage/rate fields, matching Decimal(userInput:).
+    init?(userInput: String) {
+        guard let decimal = Decimal(userInput: userInput) else { return nil }
+        self = NSDecimalNumber(decimal: decimal).doubleValue
+    }
+}
+
 /// "3 yr 2 mo", "8 mo", "now" — for payoff durations.
 func monthsDurationString(_ months: Int) -> String {
     if months <= 0 { return "now" }

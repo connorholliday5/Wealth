@@ -22,6 +22,29 @@ enum FinanceMath {
         monthlyBillsTotal(bills) * Decimal(months)
     }
 
+    /// Spending categories that represent day-to-day living costs but rarely
+    /// appear as tracked bills — used to size a realistic emergency fund.
+    static let livingCostCategories: Set<SpendingCategory> = [
+        .groceries, .dining, .transportation, .healthcare, .shopping, .entertainment, .other,
+    ]
+
+    /// Monthly living costs = tracked recurring bills + the last 30 days of
+    /// everyday spending (groceries, gas, etc.) that isn't billed. This is the
+    /// realistic number an emergency fund has to cover; bills alone understate it.
+    static func monthlyLivingCosts(bills: [Bill], transactions: [Transaction], asOf now: Date = .now) -> Decimal {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
+        let everydaySpend = transactions
+            .filter { $0.date >= cutoff && $0.amount < 0 && livingCostCategories.contains($0.category) }
+            .reduce(Decimal(0)) { $0 + (-$1.amount) }
+        return monthlyBillsTotal(bills) + everydaySpend
+    }
+
+    /// Emergency-fund target based on realistic living costs (bills + everyday
+    /// spending), not bills alone.
+    static func emergencyFundTarget(bills: [Bill], transactions: [Transaction], months: Int = 3, asOf now: Date = .now) -> Decimal {
+        monthlyLivingCosts(bills: bills, transactions: transactions, asOf: now) * Decimal(months)
+    }
+
     /// Effective annual rate for a liability: loans store it in `interestRate`,
     /// credit cards in `apr`. Prefer `interestRate`, fall back to `apr`, so both
     /// kinds of debt participate in "highest-rate" decisions.

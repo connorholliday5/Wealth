@@ -118,6 +118,11 @@ final class Account {
     @Relationship(deleteRule: .cascade, inverse: \Transaction.account)
     var transactions: [Transaction] = []
 
+    /// Bills that pay this account down. Nullify on delete so removing an
+    /// account can never leave a bill pointing at a dangling reference.
+    @Relationship(deleteRule: .nullify, inverse: \Bill.linkedAccount)
+    var linkedBills: [Bill] = []
+
     init(
         name: String,
         type: AccountType,

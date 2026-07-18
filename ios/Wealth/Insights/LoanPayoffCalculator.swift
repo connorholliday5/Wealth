@@ -109,7 +109,8 @@ enum LoanPayoffCalculator {
             DebtPayoffResult.Line(id: $0.id, name: $0.name, months: $0.payoffMonth, totalInterest: Decimal($0.interest))
         }
         let allPaid = work.allSatisfy { $0.payoffMonth != nil }
-        let totalMonths = allPaid ? work.compactMap(\.payoffMonth).max() : nil
+        // Empty input => already debt-free: 0 months, not "infeasible".
+        let totalMonths = allPaid ? (work.compactMap(\.payoffMonth).max() ?? 0) : nil
         let totalInterest = lines.reduce(Decimal(0)) { $0 + $1.totalInterest }
 
         return DebtPayoffResult(lines: lines, totalMonths: totalMonths, totalInterest: totalInterest)

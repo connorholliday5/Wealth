@@ -102,6 +102,8 @@ struct AccountDetailView: View {
                 ContributionSection(account: account)
             }
 
+            AccountEditSection(account: account)
+
             if !recentTransactions.isEmpty {
                 Section("Recent Activity") {
                     ForEach(recentTransactions) { transaction in
@@ -162,6 +164,97 @@ private struct ContributionSection: View {
             if let match = account.employerMatchPercent {
                 LabeledContent("Employer match", value: String(format: "%.1f%%", match))
             }
+        }
+    }
+}
+
+/// Fixes the "can never correct it later" problem: rate, minimum payment,
+/// credit limit, and employer-match details are all editable after creation.
+/// Without an editable credit limit, the utilization insight could never fire
+/// for manually-added cards.
+private struct AccountEditSection: View {
+    @Bindable var account: Account
+
+    @State private var rateText = ""
+    @State private var minimumText = ""
+    @State private var limitText = ""
+    @State private var matchText = ""
+    @State private var loaded = false
+
+    private var isDebt: Bool {
+        account.type.category == .loan || account.type.category == .credit
+    }
+
+    var body: some View {
+        Section {
+            TextField("Account name", text: $account.name)
+            if isDebt {
+                HStack {
+                    Text("APR %")
+                    Spacer()
+                    TextField("e.g. 22.99", text: $rateText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                }
+                HStack {
+                    Text("Minimum payment")
+                    Spacer()
+                    TextField("e.g. 35", text: $minimumText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                }
+            }
+            if account.type == .creditCard {
+                HStack {
+                    Text("Credit limit")
+                    Spacer()
+                    TextField("e.g. 5000", text: $limitText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                }
+            }
+            if account.type.isWorkBenefit {
+                HStack {
+                    Text("Employer match %")
+                    Spacer()
+                    TextField("e.g. 4", text: $matchText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                }
+            }
+        } header: {
+            Text("Edit Details")
+        } footer: {
+            Text("Changes apply as you type. Rate and payment feed the payoff planner; credit limit powers the utilization check.")
+        }
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            if let rate = account.interestRate ?? account.apr { rateText = String(format: "%.2f", rate) }
+            if let minimum = account.minimumPayment { minimumText = "\(minimum)" }
+            if let limit = account.creditLimit { limitText = "\(limit)" }
+            if let match = account.employerMatchPercent { matchText = String(format: "%.1f", match) }
+        }
+        .onChange(of: rateText) { _, text in
+            guard let rate = Double(userInput: text) else { return }
+            if account.type == .creditCard {
+                account.apr = rate
+            } else {
+                account.interestRate = rate
+            }
+        }
+        .onChange(of: minimumText) { _, text in
+            if let minimum = Decimal(userInput: text) { account.minimumPayment = minimum }
+        }
+        .onChange(of: limitText) { _, text in
+            if let limit = Decimal(userInput: text), limit > 0 { account.creditLimit = limit }
+        }
+        .onChange(of: matchText) { _, text in
+            if let match = Double(userInput: text) { account.employerMatchPercent = match }
         }
     }
 }

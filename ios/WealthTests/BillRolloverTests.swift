@@ -11,7 +11,7 @@ final class BillRolloverTests: XCTestCase {
                         nextDueDate: TestSupport.daysFromNow(-45))
         ctx.insert(bill)
 
-        XCTAssertTrue(bill.advancePastDue())
+        XCTAssertGreaterThan(bill.advancePastDue(), 0)
         // Must land today or later, and within one cycle of today.
         let startOfToday = Calendar.current.startOfDay(for: .now)
         XCTAssertGreaterThanOrEqual(bill.nextDueDate, startOfToday)
@@ -25,7 +25,7 @@ final class BillRolloverTests: XCTestCase {
                         nextDueDate: .now)
         ctx.insert(bill)
 
-        XCTAssertFalse(bill.advancePastDue())
+        XCTAssertEqual(bill.advancePastDue(), 0)
     }
 
     func testFutureBillDoesNotAdvance() throws {
@@ -34,7 +34,7 @@ final class BillRolloverTests: XCTestCase {
                         nextDueDate: TestSupport.daysFromNow(10))
         ctx.insert(bill)
 
-        XCTAssertFalse(bill.advancePastDue())
+        XCTAssertEqual(bill.advancePastDue(), 0)
     }
 
     func testMarkPaidAdvancesOneCycleAndPaysDownLinkedDebt() throws {
@@ -54,6 +54,27 @@ final class BillRolloverTests: XCTestCase {
             Calendar.current.startOfDay(for: bill.nextDueDate),
             Calendar.current.startOfDay(for: expected)
         )
+    }
+
+    func testMonthEndAnchorSnapsBackAfterShortMonth() {
+        // Due the 31st: advancing over a short month clamps (e.g. Feb 28) but
+        // must snap BACK to the 31st afterward instead of drifting forever.
+        var components = DateComponents(year: 2026, month: 1, day: 31, hour: 12)
+        let jan31 = Calendar.current.date(from: components)!
+        let feb = BillFrequency.monthly.nextDate(after: jan31, anchorDay: 31)
+        let mar = BillFrequency.monthly.nextDate(after: feb, anchorDay: 31)
+
+        XCTAssertEqual(Calendar.current.component(.day, from: feb), 28)   // 2026: not a leap year
+        XCTAssertEqual(Calendar.current.component(.month, from: feb), 2)
+        XCTAssertEqual(Calendar.current.component(.day, from: mar), 31)   // snapped back
+        XCTAssertEqual(Calendar.current.component(.month, from: mar), 3)
+
+        // And without an anchor it still moves forward a month.
+        components = DateComponents(year: 2026, month: 4, day: 15)
+        let apr15 = Calendar.current.date(from: components)!
+        let may = BillFrequency.monthly.nextDate(after: apr15)
+        XCTAssertEqual(Calendar.current.component(.day, from: may), 15)
+        XCTAssertEqual(Calendar.current.component(.month, from: may), 5)
     }
 
     func testMarkPaidNeverPushesDebtNegative() throws {

@@ -42,7 +42,9 @@ value as the app's access key.
 
 ## Running the iOS app
 
-You'll need a Mac with Xcode 16+. Generate the Xcode project with
+You'll need a Mac with Xcode 16+ (Xcode 26+ additionally unlocks the optional
+on-device AI chat; on older Xcode the app builds without it). Generate the
+Xcode project with
 [XcodeGen](https://github.com/yonaskolb/XcodeGen) instead of hand-editing a
 `.xcodeproj`:
 
@@ -75,7 +77,10 @@ first open.
    balances sync in automatically after linking and on every pull-to-refresh.
 5. To test the cloud advisor: set `ANTHROPIC_API_KEY` in `server/.env`, restart
    the server, then Advisor → Chat with Advisor.
-6. Run the unit tests with ⌘U (money math, bill rollover, sync mapping/decoding).
+6. Run the unit tests with ⌘U — 50+ tests over the money engines: paycheck
+   waterfall, loan payoff simulation, bill rollover/month-end anchoring,
+   insights rules, account recommendations, budgets, and sync decoding.
+   GitHub Actions runs the same build + tests on every push (.github/workflows/ci.yml).
 
 ## What's implemented
 
@@ -112,10 +117,27 @@ first open.
   change yearly).
 - **Advisor** (`ios/Wealth/Insights/InsightsEngine.swift`): a deterministic
   rules engine — no external AI call, nothing leaves the device. It checks
-  credit utilization, emergency-fund coverage, which debt to prioritize,
-  contribution pace toward annual limits, employer-match reminders, upcoming
-  cash-flow gaps, savings rate, and top spending category, all computed live
-  from your accounts/bills/transactions.
+  credit utilization, emergency-fund coverage (bills + real everyday spending),
+  which debt to prioritize (loans AND credit-card APRs), contribution pace
+  toward annual limits, employer-match reminders, upcoming cash-flow gaps
+  (payroll-deducted bills excluded), savings rate (transfers/debt payments
+  don't count as spending), top spending category, and budget overruns — all
+  computed live from your accounts/bills/transactions. **This rules engine is
+  the primary advisor by design: free, instant, offline.**
+- **Account recommendations** (`Insights/AccountRecommendationEngine.swift`):
+  deterministic "which accounts should I open?" guidance on the Advisor tab —
+  employer 401(k)/match, high-yield savings for the emergency fund, Roth IRA
+  (with the year's IRS limit), HSA if on a high-deductible plan, and idle-cash
+  flags. Rules fire only when your data shows the gap.
+- **Spending & budgets** (`Views/Spending/SpendingView.swift`, `Models/Budget.swift`):
+  month-to-date spending by category with optional per-category monthly budgets
+  (progress bars, over/near-budget advisor warnings). Manual purchase/income
+  entry (`AddTransactionView`) so everything works without a linked bank.
+- **Savings goals** (`Views/Spending/SavingsGoalsView.swift`, `Models/SavingsGoal.swift`):
+  named targets with progress and optional target dates; the paycheck planner
+  automatically allocates toward unfinished goals at the pace the date requires.
+- **Safe to Spend** (Dashboard): checking minus bills due in the next two weeks,
+  at a glance.
 - **AI chat advisor** — free-form Q&A grounded in your own accounts/bills, with
   two interchangeable backends selected in Settings → AI Advisor (see "AI chat
   advisor" below):
@@ -181,9 +203,9 @@ billing, no API key, and prompts never leave the phone.
   `AIChatView` checks `availability` and shows a clear message instead of a
   chat box on unsupported devices/older iOS — the rest of the app (including
   the rule-based Advisor tab) works everywhere regardless.
-- `AIAdvisorManager.buildInstructions` is the seam that turns your local
-  accounts/bills into the context the model reasons over — read it to see
-  exactly what it's told.
+- `buildAdvisorSystemPrompt` in `Insights/AdvisorContext.swift` is the seam
+  that turns your local accounts/bills into the context the model reasons
+  over — read it to see exactly what it's told.
 - To go deeper: Apple's [WWDC25 session "Deep dive into the Foundation Models
   framework"](https://developer.apple.com/videos/play/wwdc2025/301/) and the
   [FoundationModels framework reference](https://developer.apple.com/documentation/foundationmodels)

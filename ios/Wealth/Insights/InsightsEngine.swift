@@ -4,18 +4,29 @@ import Foundation
 /// own data with simple, explainable personal-finance heuristics. No external
 /// AI service is called and no financial data leaves the device.
 enum InsightsEngine {
-    static func generate(accounts: [Account], bills: [Bill], transactions: [Transaction]) -> [Insight] {
+    static func generate(
+        accounts: [Account],
+        bills: [Bill],
+        transactions: [Transaction],
+        budgets: [Budget] = [],
+        asOf now: Date = .now
+    ) -> [Insight] {
         var insights: [Insight] = []
         insights.append(contentsOf: creditUtilizationInsights(accounts: accounts))
-        insights.append(contentsOf: emergencyFundInsight(accounts: accounts, bills: bills))
+        insights.append(contentsOf: emergencyFundInsight(accounts: accounts, bills: bills, transactions: transactions, asOf: now))
         insights.append(contentsOf: debtPriorityInsight(accounts: accounts))
-        insights.append(contentsOf: contributionRoomInsights(accounts: accounts))
+        insights.append(contentsOf: contributionRoomInsights(accounts: accounts, asOf: now))
         insights.append(contentsOf: employerMatchInsights(accounts: accounts))
-        insights.append(contentsOf: cashFlowInsight(accounts: accounts, bills: bills))
-        insights.append(contentsOf: savingsRateInsight(transactions: transactions))
-        insights.append(contentsOf: topSpendingInsight(transactions: transactions))
+        insights.append(contentsOf: cashFlowInsight(accounts: accounts, bills: bills, asOf: now))
+        insights.append(contentsOf: savingsRateInsight(transactions: transactions, asOf: now))
+        insights.append(contentsOf: topSpendingInsight(transactions: transactions, asOf: now))
+        insights.append(contentsOf: budgetInsights(budgets: budgets, transactions: transactions, asOf: now))
         return insights
     }
+
+    /// Categories that represent moving money, not spending it. Counting these
+    /// as expenses would make saving money look like overspending.
+    static let nonSpendingCategories: Set<SpendingCategory> = [.income, .savingsTransfer, .debtPayment, .workBenefit]
 
     private static func creditUtilizationInsights(accounts: [Account]) -> [Insight] {
         let cards = accounts.filter { $0.type == .creditCard && ($0.creditLimit ?? 0) > 0 }
@@ -32,39 +43,40 @@ enum InsightsEngine {
         }
     }
 
-    private static func emergencyFundInsight(accounts: [Account], bills: [Bill]) -> [Insight] {
-        let cash = accounts.filter { $0.type == .checking || $0.type == .savings }
-            .reduce(Decimal(0)) { $0 + $1.balance }
-        let monthlyExpenses = bills.reduce(Decimal(0)) { $0 + $1.monthlyEquivalent }
-        guard monthlyExpenses > 0 else { return [] }
-        let monthsCovered = (cash / monthlyExpenses) as NSDecimalNumber
+    private static func emergencyFundInsight(accounts: [Account], bills: [Bill], transactions: [Transaction], asOf now: Date) -> [Insight] {
+        let cash = FinanceMath.cashOnHand(accounts)
+        // Bills alone understate real living costs — include everyday spending.
+        let monthlyCosts = FinanceMath.monthlyLivingCosts(bills: bills, transactions: transactions, asOf: now)
+        guard monthlyCosts > 0 else { return [] }
+        let monthsCovered = (cash / monthlyCosts) as NSDecimalNumber
         let months = monthsCovered.doubleValue
 
         if months < 1 {
             return [Insight(
                 title: "Emergency fund is thin",
-                message: "Your cash on hand covers less than a month of bills (\(cash.currencyString) vs \(monthlyExpenses.currencyString)/mo). Aim to build toward 3-6 months of expenses before investing aggressively.",
+                message: "Your cash covers less than a month of real costs \u{2014} bills plus everyday spending run about \(monthlyCosts.currencyString)/mo against \(cash.currencyString) on hand. Build toward 3-6 months before investing aggressively.",
                 severity: .warning
             )]
         } else if months < 3 {
             return [Insight(
                 title: "Building your emergency fund",
-                message: "You have about \(String(format: "%.1f", months)) months of expenses saved. Keep going toward a 3-6 month cushion.",
+                message: "You have about \(String(format: "%.1f", months)) months of living costs saved (bills plus everyday spending). Keep going toward a 3-6 month cushion.",
                 severity: .info
             )]
         } else {
             return [Insight(
                 title: "Emergency fund looks solid",
-                message: "You have about \(String(format: "%.1f", months)) months of expenses in cash \u{2014} that's a healthy cushion.",
+                message: "You have about \(String(format: "%.1f", months)) months of living costs in cash \u{2014} that's a healthy cushion.",
                 severity: .success
             )]
         }
     }
 
     private static func debtPriorityInsight(accounts: [Account]) -> [Insight] {
-        let debts = accounts.filter { $0.type.isLiability && $0.balance > 0 }
-        guard let highest = debts.max(by: { ($0.interestRate ?? 0) < ($1.interestRate ?? 0) }),
-              let rate = highest.interestRate, rate > 0 else { return [] }
+        // effectiveAPR reads loans (interestRate) AND credit cards (apr), so a
+        // 23% card correctly outranks a 6% loan — previously cards were invisible here.
+        guard let highest = FinanceMath.highestRateDebt(accounts),
+              let rate = FinanceMath.effectiveAPR(highest), rate > 0 else { return [] }
         let severity: InsightSeverity = rate >= 15 ? .warning : .info
         return [Insight(
             title: "Focus extra payments on \(highest.name)",
@@ -73,13 +85,13 @@ enum InsightsEngine {
         )]
     }
 
-    private static func contributionRoomInsights(accounts: [Account]) -> [Insight] {
-        let now = Date.now
-        let monthsLeft = max(1, 12 - Calendar.current.component(.month, from: now) + 1)
+    private static func contributionRoomInsights(accounts: [Account], asOf now: Date) -> [Insight] {
+        let monthsLeft = FinanceMath.monthsLeftInYear(asOf: now)
+        let year = Calendar.current.component(.year, from: now)
         let trackable = accounts.filter { $0.type.isWorkBenefit || $0.type == .rothIRA || $0.type == .traditionalIRA }
 
         return trackable.compactMap { account -> Insight? in
-            let limit = account.contributionLimitOverride ?? ContributionLimits.defaultAnnualLimit(for: account.type)
+            let limit = account.contributionLimitOverride ?? ContributionLimits.defaultAnnualLimit(for: account.type, year: year)
             guard let limit, limit > 0 else { return nil }
             let contributed = account.yearToDateContribution ?? 0
             let remaining = limit - contributed
@@ -111,10 +123,15 @@ enum InsightsEngine {
             }
     }
 
-    private static func cashFlowInsight(accounts: [Account], bills: [Bill]) -> [Insight] {
+    private static func cashFlowInsight(accounts: [Account], bills: [Bill], asOf now: Date) -> [Insight] {
         let checking = accounts.filter { $0.type == .checking }.reduce(Decimal(0)) { $0 + $1.balance }
-        let next14DayCutoff = Calendar.current.date(byAdding: .day, value: 14, to: .now)!
-        let dueSoon = bills.filter { $0.nextDueDate <= next14DayCutoff }.reduce(Decimal(0)) { $0 + $1.amount }
+        let startOfToday = Calendar.current.startOfDay(for: now)
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: 14, to: now) else { return [] }
+        // Only bills that will actually hit checking: due within the window
+        // (not stale past-due rows) and not already deducted from a paycheck.
+        let dueSoon = bills
+            .filter { !$0.isPayrollDeduction && $0.nextDueDate >= startOfToday && $0.nextDueDate <= cutoff }
+            .reduce(Decimal(0)) { $0 + $1.amount }
         guard dueSoon > 0, dueSoon > checking else { return [] }
         return [Insight(
             title: "Possible cash flow gap",
@@ -123,11 +140,15 @@ enum InsightsEngine {
         )]
     }
 
-    private static func savingsRateInsight(transactions: [Transaction]) -> [Insight] {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: .now)!
+    private static func savingsRateInsight(transactions: [Transaction], asOf now: Date) -> [Insight] {
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: now) else { return [] }
         let recent = transactions.filter { $0.date >= cutoff }
         let income = recent.filter { $0.category == .income }.reduce(Decimal(0)) { $0 + $1.amount }
-        let expenses = recent.filter { $0.amount < 0 }.reduce(Decimal(0)) { $0 + (-$1.amount) }
+        // Money moved into savings/investments or debt principal is SAVED, not
+        // spent — the old logic counted it as spending, so saving lowered your rate.
+        let expenses = recent
+            .filter { $0.amount < 0 && !nonSpendingCategories.contains($0.category) }
+            .reduce(Decimal(0)) { $0 + (-$1.amount) }
         guard income > 0 else { return [] }
         let rate = ((income - expenses) / income) as NSDecimalNumber
         let pct = rate.doubleValue * 100
@@ -135,16 +156,15 @@ enum InsightsEngine {
         return [Insight(
             title: "Savings rate: \(Int(pct))%",
             message: pct < 20
-                ? "You saved about \(Int(pct))% of income over the last 30 days. A common target is 20% \u{2014} look for room in discretionary spending."
-                : "You saved about \(Int(pct))% of income over the last 30 days \u{2014} at or above the common 20% target. Great work.",
+                ? "You kept about \(Int(pct))% of income after spending over the last 30 days. A common target is 20% \u{2014} look for room in discretionary categories."
+                : "You kept about \(Int(pct))% of income after spending over the last 30 days \u{2014} at or above the common 20% target. Great work.",
             severity: severity
         )]
     }
 
-    private static func topSpendingInsight(transactions: [Transaction]) -> [Insight] {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: .now)!
-        let excluded: Set<SpendingCategory> = [.income, .savingsTransfer, .debtPayment, .workBenefit]
-        let recent = transactions.filter { $0.date >= cutoff && $0.amount < 0 && !excluded.contains($0.category) }
+    private static func topSpendingInsight(transactions: [Transaction], asOf now: Date) -> [Insight] {
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: now) else { return [] }
+        let recent = transactions.filter { $0.date >= cutoff && $0.amount < 0 && !nonSpendingCategories.contains($0.category) }
         let totals = Dictionary(grouping: recent, by: \.category)
             .mapValues { $0.reduce(Decimal(0)) { $0 + (-$1.amount) } }
         guard let top = totals.max(by: { $0.value < $1.value }) else { return [] }
@@ -153,5 +173,29 @@ enum InsightsEngine {
             message: "You spent \(top.value.currencyString) on \(top.key.displayName) in the last 30 days \u{2014} your largest discretionary category.",
             severity: .info
         )]
+    }
+
+    private static func budgetInsights(budgets: [Budget], transactions: [Transaction], asOf now: Date) -> [Insight] {
+        guard !budgets.isEmpty else { return [] }
+        let spent = BudgetMath.monthToDateSpending(transactions: transactions, asOf: now)
+        return budgets.compactMap { budget -> Insight? in
+            guard budget.monthlyLimit > 0 else { return nil }
+            let used = spent[budget.category] ?? 0
+            let fraction = ((used / budget.monthlyLimit) as NSDecimalNumber).doubleValue
+            if fraction >= 1 {
+                return Insight(
+                    title: "Over budget: \(budget.category.displayName)",
+                    message: "You've spent \(used.currencyString) of your \(budget.monthlyLimit.currencyString) \(budget.category.displayName) budget this month.",
+                    severity: .warning
+                )
+            } else if fraction >= 0.85 {
+                return Insight(
+                    title: "Approaching budget: \(budget.category.displayName)",
+                    message: "You've used \(Int(fraction * 100))% of your \(budget.monthlyLimit.currencyString) \(budget.category.displayName) budget with the month still going.",
+                    severity: .info
+                )
+            }
+            return nil
+        }
     }
 }

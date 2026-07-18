@@ -9,9 +9,21 @@ struct DashboardView: View {
     @Query(sort: \NetWorthSnapshot.date) private var snapshots: [NetWorthSnapshot]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @ObservedObject private var sync = SyncEngine.shared
+    @State private var showingAddTransaction = false
 
     private var netWorth: Decimal {
         accounts.reduce(0) { $0 + $1.netWorthContribution }
+    }
+
+    /// Checking money not already claimed by bills due in the next two weeks.
+    private var safeToSpend: Decimal {
+        let checking = accounts.filter { $0.type == .checking }.reduce(Decimal(0)) { $0 + $1.balance }
+        let startOfToday = Calendar.current.startOfDay(for: .now)
+        let cutoff = Calendar.current.date(byAdding: .day, value: 14, to: .now) ?? .now
+        let claimed = bills
+            .filter { !$0.isPayrollDeduction && $0.nextDueDate >= startOfToday && $0.nextDueDate <= cutoff }
+            .reduce(Decimal(0)) { $0 + $1.amount }
+        return checking - claimed
     }
 
     private var upcomingBills: [Bill] {
@@ -44,11 +56,41 @@ struct DashboardView: View {
                     netWorthSection
                 }
 
+                if !accounts.isEmpty {
+                    Section {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Safe to Spend")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Text("Checking minus bills due in the next 2 weeks")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Spacer()
+                            Text(safeToSpend.currencyString)
+                                .font(.title3.bold().monospacedDigit())
+                                .foregroundStyle(safeToSpend < 0 ? .red : .green)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+
                 Section {
                     NavigationLink {
                         PaycheckPlannerView()
                     } label: {
                         Label("Plan a Paycheck", systemImage: "dollarsign.arrow.circlepath")
+                    }
+                    NavigationLink {
+                        SpendingView()
+                    } label: {
+                        Label("Spending & Budgets", systemImage: "chart.bar")
+                    }
+                    NavigationLink {
+                        SavingsGoalsView()
+                    } label: {
+                        Label("Savings Goals", systemImage: "flag.checkered")
                     }
                 }
 
@@ -82,6 +124,16 @@ struct DashboardView: View {
                 }
             }
             .navigationTitle("Wealth")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingAddTransaction = true } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddTransaction) {
+                AddTransactionView()
+            }
             .refreshable {
                 await sync.syncAll(context: modelContext)
             }
@@ -148,15 +200,17 @@ struct DashboardView: View {
     private var categorySection: some View {
         Section("By Category") {
             ForEach(AccountCategory.allCases, id: \.self) { category in
+                // Signed toward net worth: debts show as negative so the rows
+                // visibly sum to the headline number above.
                 let total = accounts
                     .filter { $0.type.category == category }
-                    .reduce(Decimal(0)) { $0 + $1.balance }
+                    .reduce(Decimal(0)) { $0 + $1.netWorthContribution }
                 if total != 0 {
                     HStack {
                         Text(category.displayName)
                         Spacer()
                         Text(total.currencyString)
-                            .foregroundStyle(category == .credit || category == .loan ? .red : .primary)
+                            .foregroundStyle(total < 0 ? .red : .primary)
                     }
                 }
             }

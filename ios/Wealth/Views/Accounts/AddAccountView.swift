@@ -109,7 +109,7 @@ struct AddAccountView: View {
             isManual: true,
             institutionName: institutionName.isEmpty ? nil : institutionName
         )
-        if let rate = Double(interestRateText) {
+        if let rate = Double(userInput: interestRateText) {
             account.interestRate = rate
             account.apr = rate
         }
@@ -118,10 +118,12 @@ struct AddAccountView: View {
         }
         if type.isWorkBenefit {
             account.employerName = employerName.isEmpty ? nil : employerName
-            account.employerMatchPercent = Double(employerMatchText)
+            account.employerMatchPercent = Double(userInput: employerMatchText)
             account.yearToDateContribution = Decimal(userInput: ytdContributionText)
             account.contributionYear = Calendar.current.component(.year, from: .now)
-            account.contributionLimitOverride = ContributionLimits.defaultAnnualLimit(for: type)
+            // No contributionLimitOverride here: leaving it nil lets the account
+            // track each tax year's IRS limit automatically. Freezing today's
+            // limit into the override would silently go stale next January.
         }
         modelContext.insert(account)
         dismiss()

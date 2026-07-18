@@ -18,6 +18,33 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 // x-wealth-key header (the iOS app sends it from Settings > Server). Without the
 // env var the API stays open — fine for localhost development, not for a deployed
 // server. /health stays public for uptime checks.
+// Simple fixed-window rate limit (in-memory, per client IP): 120 requests/min
+// for the API overall and 10/min for the credit-spending advisor route. A
+// personal server doesn't need more, and this bounds the damage if the address
+// leaks or the shared secret is misconfigured.
+function rateLimit(maxPerMinute: number) {
+  const hits = new Map<string, { count: number; windowStart: number }>();
+  return (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {
+    const now = Date.now();
+    const ip = req.ip ?? "unknown";
+    const entry = hits.get(ip);
+    if (!entry || now - entry.windowStart > 60_000) {
+      hits.set(ip, { count: 1, windowStart: now });
+      if (hits.size > 10_000) hits.clear(); // bound memory
+      next();
+      return;
+    }
+    entry.count += 1;
+    if (entry.count > maxPerMinute) {
+      res.status(429).json({ error: "Too many requests — slow down." });
+      return;
+    }
+    next();
+  };
+}
+app.use("/api", rateLimit(120));
+app.use("/api/advisor", rateLimit(10));
+
 const sharedSecret = process.env.APP_SHARED_SECRET;
 if (sharedSecret) {
   app.use("/api", (req, res, next) => {
