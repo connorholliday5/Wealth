@@ -71,7 +71,7 @@ enum PlaidAPIClient {
     /// local account of that institution.
     static func removeItem(itemId: String) async throws {
         let request = ServerConfig.request(path: "/api/link/item/\(itemId)", method: "DELETE")
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         try Self.checkStatus(response)
     }
 
@@ -79,7 +79,7 @@ enum PlaidAPIClient {
 
     private static func post<Body: Encodable, Response: Decodable>(path: String, body: Body) async throws -> Response {
         let request = ServerConfig.request(path: path, method: "POST", jsonBody: try JSONEncoder().encode(body))
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         try Self.checkStatus(response)
         return try JSONDecoder().decode(Response.self, from: data)
     }
@@ -95,7 +95,7 @@ enum PlaidAPIClient {
         if !key.isEmpty {
             request.setValue(key, forHTTPHeaderField: "x-wealth-key")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         try Self.checkStatus(response)
         return try JSONDecoder().decode(Response.self, from: data)
     }
@@ -123,6 +123,15 @@ struct LinkedItemAccounts: Decodable {
     let itemId: String
     let institutionName: String?
     let accounts: [PlaidAccount]
+}
+
+/// A linked item the server couldn't fetch balances for. `code` is Plaid's
+/// error_code — ITEM_LOGIN_REQUIRED means the connection needs re-auth. The
+/// server emits these keys in camelCase (see accounts.ts), so no CodingKeys.
+struct ItemFailure: Decodable {
+    let itemId: String
+    let institutionName: String?
+    let code: String
 }
 
 struct PlaidAccount: Decodable {
@@ -161,6 +170,9 @@ struct PlaidTransaction: Decodable {
     let name: String?
     let merchantName: String?
     let pending: Bool?
+    /// When a pending transaction posts, Plaid sends the posted transaction with
+    /// this set to the id of the pending one it replaces — used to dedupe.
+    let pendingTransactionId: String?
     let personalFinanceCategory: PFC?
 
     struct PFC: Decodable {
@@ -173,6 +185,7 @@ struct PlaidTransaction: Decodable {
         case accountId = "account_id"
         case amount, date, name, pending
         case merchantName = "merchant_name"
+        case pendingTransactionId = "pending_transaction_id"
         case personalFinanceCategory = "personal_finance_category"
     }
 }

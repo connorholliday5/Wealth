@@ -17,6 +17,10 @@ final class SyncEngine: ObservableObject {
 
     @Published var isSyncing = false
     @Published var lastSyncError: String?
+    /// Banks whose connection broke (Plaid ITEM_LOGIN_REQUIRED) and need the
+    /// user to reconnect via update-mode Plaid Link. Rebuilt on every balance
+    /// sync, so an item clears itself once its balances fetch again.
+    @Published var itemsNeedingRelink: [(itemId: String, institutionName: String?)] = []
     @Published var lastSyncedAt: Date? {
         didSet { UserDefaults.standard.set(lastSyncedAt, forKey: "lastSyncedAt") }
     }
@@ -86,7 +90,15 @@ final class SyncEngine: ObservableObject {
     // MARK: - Balances
 
     private func syncBalances(accountsByPlaidId: [String: Account]) async throws {
-        let items = try await PlaidAPIClient.fetchAccounts()
+        let (items, failures) = try await PlaidAPIClient.fetchAccounts()
+
+        // Rebuild the relink list from this sync's failures. Items that fetched
+        // successfully drop out (cleared); those returning ITEM_LOGIN_REQUIRED
+        // surface a reconnect prompt in the UI.
+        itemsNeedingRelink = failures
+            .filter { $0.code == "ITEM_LOGIN_REQUIRED" }
+            .map { (itemId: $0.itemId, institutionName: $0.institutionName) }
+
         for item in items {
             for plaidAccount in item.accounts {
                 guard let local = accountsByPlaidId[plaidAccount.accountId] else { continue }
@@ -161,7 +173,17 @@ final class SyncEngine: ObservableObject {
 
         for wire in sync.added + sync.modified {
             guard let account = accountsByPlaidId[wire.accountId] else { continue }
-            let transaction = byPlaidId[wire.transactionId] ?? {
+            let transaction: Transaction
+            if let existing = byPlaidId[wire.transactionId] {
+                transaction = existing
+            } else if let pendingId = wire.pendingTransactionId, let posted = byPlaidId[pendingId] {
+                // A pending transaction just posted: reuse its local row and
+                // migrate the id in place instead of creating a duplicate.
+                byPlaidId[pendingId] = nil
+                posted.plaidTransactionId = wire.transactionId
+                byPlaidId[wire.transactionId] = posted
+                transaction = posted
+            } else {
                 let fresh = Transaction(
                     date: .now,
                     amount: 0,
@@ -171,8 +193,8 @@ final class SyncEngine: ObservableObject {
                 fresh.plaidTransactionId = wire.transactionId
                 context.insert(fresh)
                 byPlaidId[wire.transactionId] = fresh
-                return fresh
-            }()
+                transaction = fresh
+            }
 
             // Plaid: positive = money out. Local model: positive = money in.
             transaction.amount = Self.money(-wire.amount)

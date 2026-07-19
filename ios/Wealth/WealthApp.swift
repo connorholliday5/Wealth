@@ -14,7 +14,7 @@ struct WealthApp: App {
             // fatalError and brick the app on launch, move the incompatible store
             // aside and start fresh. The old data is NOT deleted — it's renamed to
             // a timestamped ".broken" backup on disk, so it stays recoverable.
-            Self.moveStoreAside()
+            WealthApp.moveStoreAside()
             do {
                 return try ModelContainer(for: schema, configurations: [configuration])
             } catch {

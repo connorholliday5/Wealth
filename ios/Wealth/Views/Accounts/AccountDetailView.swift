@@ -102,6 +102,10 @@ struct AccountDetailView: View {
                 ContributionSection(account: account)
             }
 
+            // Live, read-only holdings for linked investment accounts. Renders
+            // nothing for cash/credit/loan or manual accounts (guarded inside).
+            HoldingsSection(account: account)
+
             AccountEditSection(account: account)
 
             if !recentTransactions.isEmpty {

@@ -82,6 +82,30 @@ first open.
    insights rules, account recommendations, budgets, and sync decoding.
    GitHub Actions runs the same build + tests on every push (.github/workflows/ci.yml).
 
+## Going live with real bank accounts
+
+Everything above runs on Plaid **sandbox** (fake data). To connect real banks:
+
+1. **Get Plaid Production access.** In the [Plaid dashboard](https://dashboard.plaid.com),
+   request Production access — Plaid reviews each application before approving it
+   (sandbox needs no approval). Once approved, copy your production
+   `PLAID_CLIENT_ID` / `PLAID_SECRET` into `server/.env` and set
+   `PLAID_ENV=production`.
+2. **Turn on the access key.** Set `APP_SHARED_SECRET` in `server/.env` to a random
+   string and enter the same value in the app under Settings → Server → Access Key.
+   Without it the API is unauthenticated — don't skip this once real data flows.
+3. **Run the server where the app can reach it.** Running it on your Mac on your
+   home Wi-Fi works as-is over the local network (the app already allows plain
+   http to a LAN address). To sync while away from home, deploy the server
+   somewhere with **HTTPS** (iOS blocks non-HTTPS to internet hosts) and point the
+   app's Server URL at it.
+4. **Mind the cost.** Plaid Production is billed per connected Item (institution);
+   the free tier covers only a handful. Check Plaid's current pricing before
+   linking more than a few banks.
+5. **Back up your data.** Holdings, balances, and transactions live on-device.
+   Periodically export a JSON backup from Settings → Your Data so a lost or reset
+   phone doesn't lose your history.
+
 ## What's implemented
 
 - **Accounts** (`ios/Wealth/Models/Account.swift`): checking, savings, credit

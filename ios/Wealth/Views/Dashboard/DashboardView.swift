@@ -9,6 +9,7 @@ struct DashboardView: View {
     @Query(sort: \NetWorthSnapshot.date) private var snapshots: [NetWorthSnapshot]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @ObservedObject private var sync = SyncEngine.shared
+    @StateObject private var linkManager = PlaidLinkManager()
     @State private var showingAddTransaction = false
 
     private var netWorth: Decimal {
@@ -44,6 +45,27 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             List {
+                if !sync.itemsNeedingRelink.isEmpty {
+                    Section {
+                        ForEach(sync.itemsNeedingRelink.indices, id: \.self) { index in
+                            let item = sync.itemsNeedingRelink[index]
+                            HStack {
+                                Label(
+                                    "\(item.institutionName ?? "A bank") needs to be reconnected",
+                                    systemImage: "exclamationmark.triangle"
+                                )
+                                .font(.subheadline)
+                                .foregroundStyle(.orange)
+                                Spacer()
+                                Button("Reconnect") {
+                                    linkManager.presentRelink(itemId: item.itemId)
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                }
+
                 if accounts.isEmpty {
                     Section {
                         ContentUnavailableView {

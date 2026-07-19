@@ -23,6 +23,44 @@ final class PlaidLinkManager: ObservableObject {
         }
     }
 
+    /// Reopens Plaid Link in update mode to repair a broken connection. Unlike
+    /// presentLink(), there's no public-token exchange and no accounts are
+    /// created — the item is repaired at Plaid and the next sync succeeds.
+    func presentRelink(itemId: String) {
+        Task {
+            do {
+                let linkToken = try await PlaidAPIClient.createUpdateLinkToken(itemId: itemId)
+                openRelink(linkToken: linkToken)
+            } catch {
+                errorMessage = "Couldn't start reconnect: \(error.localizedDescription). Is the proxy server running?"
+            }
+        }
+    }
+
+    private func openRelink(linkToken: String) {
+        var configuration = LinkTokenConfiguration(token: linkToken) { [weak self] _ in
+            // Update mode succeeded: connection repaired at Plaid. Nothing to
+            // exchange or create — just clear any prior error. The next balance
+            // sync will fetch and drop this item from itemsNeedingRelink.
+            self?.errorMessage = nil
+        }
+        configuration.onExit = { [weak self] exit in
+            if let error = exit.error {
+                self?.errorMessage = "Reconnect didn't finish: \(String(describing: error))"
+            }
+        }
+
+        let result = Plaid.create(configuration)
+        switch result {
+        case .success(let handler):
+            self.handler = handler
+            guard let rootViewController = topViewController() else { return }
+            handler.open(presentUsing: .viewController(rootViewController))
+        case .failure(let error):
+            errorMessage = "Couldn't create Plaid Link handler: \(error.localizedDescription)"
+        }
+    }
+
     private func openLink(linkToken: String) {
         var configuration = LinkTokenConfiguration(token: linkToken) { [weak self] success in
             self?.handleSuccess(success)
@@ -50,7 +88,7 @@ final class PlaidLinkManager: ObservableObject {
         Task {
             do {
                 let exchange = try await PlaidAPIClient.exchangePublicToken(success.publicToken)
-                let items = try await PlaidAPIClient.fetchAccounts()
+                let items = try await PlaidAPIClient.fetchAccounts().items
                 guard let item = items.first(where: { $0.itemId == exchange.itemId }) else { return }
                 linkedAccounts = item.accounts.map { plaidAccount in
                     let account = Account(
