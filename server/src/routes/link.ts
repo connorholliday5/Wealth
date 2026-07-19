@@ -25,6 +25,35 @@ linkRouter.post("/token/create", async (req, res) => {
   }
 });
 
+// Re-auth (update mode): when a bank breaks the connection (password change,
+// MFA — Plaid surfaces ITEM_LOGIN_REQUIRED), the app reopens Plaid Link with an
+// update-mode link token. Passing the item's existing access_token and OMITTING
+// the products array is what puts Link into update mode (repair, not add).
+linkRouter.post("/token/update", async (req, res) => {
+  const { itemId } = req.body as { itemId?: string };
+  if (!itemId) {
+    res.status(400).json({ error: "itemId is required" });
+    return;
+  }
+  const accessToken = getAccessToken(itemId);
+  if (!accessToken) {
+    res.status(404).json({ error: "Unknown itemId" });
+    return;
+  }
+  try {
+    const response = await plaidClient.linkTokenCreate({
+      user: { client_user_id: "wealth-app-single-user" },
+      client_name: "Wealth",
+      country_codes: [CountryCode.Us],
+      language: "en",
+      access_token: accessToken,
+    });
+    res.json({ linkToken: response.data.link_token });
+  } catch (err) {
+    handlePlaidError(res, err);
+  }
+});
+
 // Step 2: app exchanges the public_token returned by Plaid Link for an access_token,
 // which never leaves this server.
 linkRouter.post("/token/exchange", async (req, res) => {

@@ -13,9 +13,28 @@ enum PlaidAPIClient {
         let institutionName: String?
     }
 
+    /// Shared session with sane timeouts. A full-history first sync can take a
+    /// while (hence the long resource timeout), but an individual request should
+    /// still give up in 30s so the app fails fast when the server is off.
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 120
+        return URLSession(configuration: configuration)
+    }()
+
     static func createLinkToken() async throws -> String {
         struct Response: Decodable { let linkToken: String }
         let resp: Response = try await post(path: "/api/link/token/create", body: [String: String]())
+        return resp.linkToken
+    }
+
+    /// Update-mode link token to repair a broken connection (re-auth). Opening
+    /// Plaid Link with this token lets the user re-enter credentials/MFA without
+    /// creating new accounts.
+    static func createUpdateLinkToken(itemId: String) async throws -> String {
+        struct Response: Decodable { let linkToken: String }
+        let resp: Response = try await post(path: "/api/link/token/update", body: ["itemId": itemId])
         return resp.linkToken
     }
 
@@ -23,10 +42,15 @@ enum PlaidAPIClient {
         try await post(path: "/api/link/token/exchange", body: ["publicToken": publicToken])
     }
 
-    static func fetchAccounts() async throws -> [LinkedItemAccounts] {
-        struct Response: Decodable { let items: [LinkedItemAccounts] }
+    /// Balances for every linked item, plus any per-item `failures` (e.g. a bank
+    /// returning ITEM_LOGIN_REQUIRED) so the UI can prompt a reconnect.
+    static func fetchAccounts() async throws -> (items: [LinkedItemAccounts], failures: [ItemFailure]) {
+        struct Response: Decodable {
+            let items: [LinkedItemAccounts]
+            let failures: [ItemFailure]?
+        }
         let resp: Response = try await get(path: "/api/accounts")
-        return resp.items
+        return (resp.items, resp.failures ?? [])
     }
 
     /// Incremental transaction sync for one linked institution. Pass

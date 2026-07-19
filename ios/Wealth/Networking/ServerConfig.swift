@@ -15,11 +15,34 @@ enum ServerConfig {
         return URL(string: defaultURLString)!
     }
 
+    /// Keychain account name for the server access key.
+    private static let accessKeyAccount = "serverKey"
+
     /// Matches the server's APP_SHARED_SECRET. Empty = header not sent (fine for
-    /// a localhost server with no secret configured).
+    /// a localhost server with no secret configured). Stored in the Keychain so
+    /// the secret never sits in UserDefaults (which lands in device backups).
     static var accessKey: String {
-        UserDefaults.standard.string(forKey: "serverKey")?
+        migrateLegacyKeyIfNeeded()
+        return KeychainStore.get(accessKeyAccount)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// Persists the access key to the Keychain. Empty removes it.
+    static func setAccessKey(_ key: String) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        KeychainStore.set(trimmed, for: accessKeyAccount)
+    }
+
+    /// One-time silent migration: earlier builds stored the key in UserDefaults.
+    /// Move any non-empty value into the Keychain and clear the plaintext copy.
+    private static func migrateLegacyKeyIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard let legacy = defaults.string(forKey: accessKeyAccount)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !legacy.isEmpty else {
+            return
+        }
+        KeychainStore.set(legacy, for: accessKeyAccount)
+        defaults.removeObject(forKey: accessKeyAccount)
     }
 
     static func request(path: String, method: String = "GET", jsonBody: Data? = nil) -> URLRequest {
