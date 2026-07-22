@@ -2,4 +2,6 @@ node_modules
 dist
 .env
 tokens.sqlite
+tokens.json
+tokens.json.tmp
 *.sqlite

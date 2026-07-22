@@ -1,7 +1,13 @@
-import Database from "better-sqlite3";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Storage is a single JSON file holding AES-256-GCM-encrypted Plaid tokens and
+// per-item sync cursors. This deliberately avoids a native database module
+// (better-sqlite3) so the server needs zero compilation and runs on any Node
+// version — a single-user proxy stores only a handful of tokens, so a file is
+// plenty. The encryption is unchanged from the previous SQLite version.
 
 const keyHex = process.env.TOKEN_ENCRYPTION_KEY;
 if (!keyHex || keyHex.length !== 64) {
@@ -9,21 +15,45 @@ if (!keyHex || keyHex.length !== 64) {
 }
 const key = Buffer.from(keyHex, "hex");
 
-// Anchor the DB next to the server code, NOT the process working directory —
-// otherwise starting the server from a different folder silently creates a
-// fresh empty DB and every linked bank appears to vanish.
+// Anchor the file next to the server code, NOT the process working directory —
+// otherwise starting the server from a different folder silently reads a fresh
+// empty store and every linked bank appears to vanish.
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const db = new Database(process.env.TOKENS_DB_PATH ?? path.join(serverRoot, "tokens.sqlite"));
-db.exec(`
-  CREATE TABLE IF NOT EXISTS items (
-    item_id TEXT PRIMARY KEY,
-    institution_name TEXT,
-    encrypted_token TEXT NOT NULL,
-    iv TEXT NOT NULL,
-    auth_tag TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
+const storePath = process.env.TOKENS_DB_PATH ?? path.join(serverRoot, "tokens.json");
+
+interface StoredItem {
+  institutionName: string | null;
+  encrypted: string;
+  iv: string;
+  authTag: string;
+  createdAt: string;
+}
+
+interface Store {
+  items: Record<string, StoredItem>;
+  cursors: Record<string, string>;
+}
+
+function loadStore(): Store {
+  try {
+    const raw = fs.readFileSync(storePath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<Store>;
+    return { items: parsed.items ?? {}, cursors: parsed.cursors ?? {} };
+  } catch {
+    // Missing or unreadable file => start empty.
+    return { items: {}, cursors: {} };
+  }
+}
+
+const store: Store = loadStore();
+
+function persist() {
+  // Atomic write: write to a temp file, then rename over the target so a crash
+  // mid-write can't corrupt the store.
+  const tmp = `${storePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(store, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, storePath);
+}
 
 function encrypt(plainText: string): { encrypted: string; iv: string; authTag: string } {
   const iv = crypto.randomBytes(12);
@@ -48,57 +78,44 @@ function decrypt(encryptedHex: string, ivHex: string, authTagHex: string): strin
 
 export function saveItem(itemId: string, accessToken: string, institutionName: string | null) {
   const { encrypted, iv, authTag } = encrypt(accessToken);
-  db.prepare(
-    `INSERT INTO items (item_id, institution_name, encrypted_token, iv, auth_tag)
-     VALUES (@itemId, @institutionName, @encrypted, @iv, @authTag)
-     ON CONFLICT(item_id) DO UPDATE SET
-       institution_name = @institutionName,
-       encrypted_token = @encrypted,
-       iv = @iv,
-       auth_tag = @authTag`
-  ).run({ itemId, institutionName, encrypted, iv, authTag });
+  store.items[itemId] = {
+    institutionName,
+    encrypted,
+    iv,
+    authTag,
+    createdAt: store.items[itemId]?.createdAt ?? new Date().toISOString(),
+  };
+  persist();
 }
 
 export function getAccessToken(itemId: string): string | undefined {
-  const row = db
-    .prepare(`SELECT encrypted_token, iv, auth_tag FROM items WHERE item_id = ?`)
-    .get(itemId) as { encrypted_token: string; iv: string; auth_tag: string } | undefined;
-  if (!row) return undefined;
-  return decrypt(row.encrypted_token, row.iv, row.auth_tag);
+  const item = store.items[itemId];
+  if (!item) return undefined;
+  return decrypt(item.encrypted, item.iv, item.authTag);
 }
 
 export function listItems(): Array<{ itemId: string; institutionName: string | null }> {
-  const rows = db
-    .prepare(`SELECT item_id as itemId, institution_name as institutionName FROM items`)
-    .all() as Array<{ itemId: string; institutionName: string | null }>;
-  return rows;
+  return Object.entries(store.items).map(([itemId, item]) => ({
+    itemId,
+    institutionName: item.institutionName,
+  }));
 }
 
 export function deleteItem(itemId: string) {
-  db.prepare(`DELETE FROM items WHERE item_id = ?`).run(itemId);
+  delete store.items[itemId];
+  persist();
 }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS sync_cursors (
-    item_id TEXT PRIMARY KEY,
-    cursor TEXT
-  )
-`);
-
 export function getCursor(itemId: string): string | undefined {
-  const row = db.prepare(`SELECT cursor FROM sync_cursors WHERE item_id = ?`).get(itemId) as
-    | { cursor: string }
-    | undefined;
-  return row?.cursor;
+  return store.cursors[itemId];
 }
 
 export function setCursor(itemId: string, cursor: string) {
-  db.prepare(
-    `INSERT INTO sync_cursors (item_id, cursor) VALUES (?, ?)
-     ON CONFLICT(item_id) DO UPDATE SET cursor = excluded.cursor`
-  ).run(itemId, cursor);
+  store.cursors[itemId] = cursor;
+  persist();
 }
 
 export function clearCursor(itemId: string) {
-  db.prepare(`DELETE FROM sync_cursors WHERE item_id = ?`).run(itemId);
+  delete store.cursors[itemId];
+  persist();
 }
