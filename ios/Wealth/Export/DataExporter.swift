@@ -253,18 +253,22 @@ enum DataExporter {
 
     // MARK: - Formatting helpers
 
+    // These are pure string functions with no actor state. They're marked
+    // `nonisolated` so the Codable DTO initializers (which run outside the main
+    // actor) can call them — otherwise Swift 6 rejects the cross-actor call.
+
     /// Plain, locale-independent decimal string (e.g. "1234.56").
-    fileprivate static func decimalString(_ value: Decimal) -> String {
+    nonisolated fileprivate static func decimalString(_ value: Decimal) -> String {
         NSDecimalNumber(decimal: value).stringValue
     }
 
-    fileprivate static func decimalString(_ value: Decimal?) -> String {
+    nonisolated fileprivate static func decimalString(_ value: Decimal?) -> String {
         guard let value else { return "" }
         return decimalString(value)
     }
 
     /// Nil-preserving variant for JSON (empty CSV cells use `decimalString`).
-    fileprivate static func optionalDecimalString(_ value: Decimal?) -> String? {
+    nonisolated fileprivate static func optionalDecimalString(_ value: Decimal?) -> String? {
         guard let value else { return nil }
         return decimalString(value)
     }

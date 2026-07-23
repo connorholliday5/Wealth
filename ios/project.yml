@@ -36,6 +36,15 @@ targets:
         NSFaceIDUsageDescription: "Wealth uses Face ID to keep your accounts and balances private."
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # Portrait-only — silences the "all interface orientations must be
+        # supported" warning and matches how a finance app is actually used.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.connorholliday.wealth.app
