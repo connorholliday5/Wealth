@@ -25,10 +25,18 @@ struct AddAccountView: View {
             Form {
                 Section("Link Automatically") {
                     Button {
-                        plaidLinkManager.presentLink()
+                        plaidLinkManager.presentLink(context: modelContext)
                     } label: {
-                        Label("Connect a bank, card, or 401(k)/Roth IRA", systemImage: "link")
+                        if plaidLinkManager.isFinishingLink {
+                            HStack {
+                                ProgressView()
+                                Text("Finishing up…")
+                            }
+                        } else {
+                            Label("Connect a bank, card, or 401(k)/Roth IRA", systemImage: "link")
+                        }
                     }
+                    .disabled(plaidLinkManager.isFinishingLink)
                     Text("Uses Plaid to securely pull balances and transactions. Requires the Wealth proxy server to be configured with your Plaid API keys.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -75,13 +83,11 @@ struct AddAccountView: View {
                         .disabled(name.isEmpty || balanceText.isEmpty)
                 }
             }
-            .onChange(of: plaidLinkManager.linkedAccounts) { _, linked in
-                guard !linked.isEmpty else { return }
-                for account in linked {
-                    modelContext.insert(account)
-                }
-                // Pull transaction history, APRs, and loan terms for the new
-                // accounts right away rather than waiting for the next auto-sync.
+            .onChange(of: plaidLinkManager.didLinkAccounts) { _, linked in
+                guard linked else { return }
+                // Accounts are already inserted by SyncEngine.importNewAccounts.
+                // Kick off a full sync so transactions, APRs and loan terms
+                // arrive too, rather than waiting for the next auto-sync.
                 let context = modelContext
                 Task { await SyncEngine.shared.syncAll(context: context) }
                 dismiss()

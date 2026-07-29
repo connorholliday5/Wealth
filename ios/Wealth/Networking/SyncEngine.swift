@@ -37,25 +37,32 @@ final class SyncEngine: ObservableObject {
 
     func syncAll(context: ModelContext) async {
         guard !isSyncing else { return }
+        isSyncing = true
+        defer { isSyncing = false }
+
+        var failures: [String] = []
+
+        // Balances first — and this ALSO creates local accounts for anything
+        // the server has linked that the app doesn't know about yet. That makes
+        // linking self-healing: if Plaid wasn't ready with account data at the
+        // moment Link finished, the next sync or pull-to-refresh picks it up
+        // instead of the link being silently lost.
+        do {
+            _ = try await fetchAndApplyAccounts(context: context)
+        } catch {
+            failures.append("Balances: \(error.localizedDescription)")
+        }
 
         let allAccounts = (try? context.fetch(FetchDescriptor<Account>())) ?? []
         let linkedAccounts = allAccounts.filter { $0.plaidItemId != nil && $0.plaidAccountId != nil }
-        guard !linkedAccounts.isEmpty else { return }
-
-        isSyncing = true
-        defer { isSyncing = false }
+        guard !linkedAccounts.isEmpty else {
+            finish(failures: failures)
+            return
+        }
 
         var accountsByPlaidId: [String: Account] = [:]
         for account in linkedAccounts {
             accountsByPlaidId[account.plaidAccountId!] = account
-        }
-
-        var failures: [String] = []
-
-        do {
-            try await syncBalances(accountsByPlaidId: accountsByPlaidId)
-        } catch {
-            failures.append("Balances: \(error.localizedDescription)")
         }
 
         // Each institution syncs independently — one bank needing re-login
@@ -78,38 +85,85 @@ final class SyncEngine: ObservableObject {
         let now = Date.now
         for account in linkedAccounts { account.lastSynced = now }
         try? context.save()
+        finish(failures: failures)
+    }
 
+    private func finish(failures: [String]) {
         if failures.isEmpty {
-            lastSyncedAt = now
+            lastSyncedAt = .now
             lastSyncError = nil
         } else {
             lastSyncError = failures.joined(separator: " · ")
         }
     }
 
-    // MARK: - Balances
+    // MARK: - Accounts (import + balances)
 
-    private func syncBalances(accountsByPlaidId: [String: Account]) async throws {
+    /// Pulls the server's linked accounts and creates local rows for any the
+    /// app doesn't have yet. Returns how many were created. Non-throwing —
+    /// used right after Plaid Link finishes.
+    @discardableResult
+    func importNewAccounts(context: ModelContext) async -> Int {
+        (try? await fetchAndApplyAccounts(context: context)) ?? 0
+    }
+
+    private func fetchAndApplyAccounts(context: ModelContext) async throws -> Int {
         let (items, failures) = try await PlaidAPIClient.fetchAccounts()
 
-        // Rebuild the relink list from this sync's failures. Items that fetched
+        // Rebuild the relink list from this fetch. Items that fetched
         // successfully drop out (cleared); those returning ITEM_LOGIN_REQUIRED
         // surface a reconnect prompt in the UI.
         itemsNeedingRelink = failures
             .filter { $0.code == "ITEM_LOGIN_REQUIRED" }
             .map { (itemId: $0.itemId, institutionName: $0.institutionName) }
 
+        return applyAccounts(items: items, context: context)
+    }
+
+    /// Updates balances for accounts we already have and inserts any new ones.
+    /// Matching is by Plaid's account_id, so this can never duplicate an
+    /// account. This is the single path that turns a Plaid link into local
+    /// accounts — shared by the link flow and every sync.
+    @discardableResult
+    private func applyAccounts(items: [LinkedItemAccounts], context: ModelContext) -> Int {
+        let existing = (try? context.fetch(FetchDescriptor<Account>())) ?? []
+        var byPlaidId: [String: Account] = [:]
+        for account in existing {
+            if let plaidId = account.plaidAccountId { byPlaidId[plaidId] = account }
+        }
+
+        var created = 0
         for item in items {
             for plaidAccount in item.accounts {
-                guard let local = accountsByPlaidId[plaidAccount.accountId] else { continue }
-                if let current = plaidAccount.balances.current {
-                    local.balance = Self.money(current)
-                }
-                if local.type == .creditCard, let limit = plaidAccount.balances.limit, limit > 0 {
-                    local.creditLimit = Self.money(limit)
+                if let local = byPlaidId[plaidAccount.accountId] {
+                    if let current = plaidAccount.balances.current {
+                        local.balance = Self.money(current)
+                    }
+                    if local.type == .creditCard, let limit = plaidAccount.balances.limit, limit > 0 {
+                        local.creditLimit = Self.money(limit)
+                    }
+                } else {
+                    let account = Account(
+                        name: plaidAccount.name,
+                        type: AccountType.from(plaidType: plaidAccount.type, subtype: plaidAccount.subtype),
+                        balance: Self.money(plaidAccount.balances.current ?? 0),
+                        isManual: false,
+                        institutionName: item.institutionName
+                    )
+                    account.plaidItemId = item.itemId
+                    account.plaidAccountId = plaidAccount.accountId
+                    account.lastSynced = .now
+                    if account.type == .creditCard, let limit = plaidAccount.balances.limit, limit > 0 {
+                        account.creditLimit = Self.money(limit)
+                    }
+                    context.insert(account)
+                    byPlaidId[plaidAccount.accountId] = account
+                    created += 1
                 }
             }
         }
+        if created > 0 { try? context.save() }
+        return created
     }
 
     /// Converts a JSON-decoded Double into a money Decimal by rounding to

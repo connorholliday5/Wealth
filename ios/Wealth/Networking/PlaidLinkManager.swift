@@ -1,18 +1,24 @@
 import SwiftUI
+import SwiftData
 import UIKit
 import LinkKit
 
-/// Drives the Plaid Link UI and converts the resulting Plaid accounts into
-/// local `Account` models. Requires the proxy server (see server/) to be
-/// running and reachable at `PlaidAPIClient.baseURL`.
+/// Drives the Plaid Link UI. Account creation itself is delegated to
+/// `SyncEngine.importNewAccounts` so linking and syncing share one code path
+/// (and can never create duplicates). Requires the proxy server (see server/)
+/// to be running and reachable at `ServerConfig.baseURL`.
 @MainActor
 final class PlaidLinkManager: ObservableObject {
-    @Published var linkedAccounts: [Account] = []
+    /// Flips true once a link finished AND its accounts landed locally.
+    @Published var didLinkAccounts = false
+    @Published var isFinishingLink = false
     @Published var errorMessage: String?
 
     private var handler: Handler?
+    private var modelContext: ModelContext?
 
-    func presentLink() {
+    func presentLink(context: ModelContext) {
+        modelContext = context
         Task {
             do {
                 let linkToken = try await PlaidAPIClient.createLinkToken()
@@ -85,24 +91,34 @@ final class PlaidLinkManager: ObservableObject {
     }
 
     private func handleSuccess(_ success: LinkSuccess) {
+        guard let modelContext else {
+            errorMessage = "Internal error: no data context for linking."
+            return
+        }
         Task {
+            isFinishingLink = true
+            defer { isFinishingLink = false }
             do {
-                let exchange = try await PlaidAPIClient.exchangePublicToken(success.publicToken)
-                let items = try await PlaidAPIClient.fetchAccounts().items
-                guard let item = items.first(where: { $0.itemId == exchange.itemId }) else { return }
-                linkedAccounts = item.accounts.map { plaidAccount in
-                    let account = Account(
-                        name: plaidAccount.name,
-                        type: AccountType.from(plaidType: plaidAccount.type, subtype: plaidAccount.subtype),
-                        balance: Decimal(plaidAccount.balances.current ?? 0),
-                        isManual: false,
-                        institutionName: item.institutionName
-                    )
-                    account.plaidItemId = item.itemId
-                    account.plaidAccountId = plaidAccount.accountId
-                    account.lastSynced = .now
-                    return account
+                _ = try await PlaidAPIClient.exchangePublicToken(success.publicToken)
+
+                // Plaid often needs a few seconds after the exchange before an
+                // item's accounts are queryable, so poll briefly rather than
+                // giving up on the first empty result.
+                for attempt in 0..<5 {
+                    if attempt > 0 {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    }
+                    if await SyncEngine.shared.importNewAccounts(context: modelContext) > 0 {
+                        didLinkAccounts = true
+                        return
+                    }
                 }
+
+                // Never fail silently: the bank IS linked server-side at this
+                // point, so tell the user how to bring the accounts in.
+                errorMessage = "Your bank is connected, but its accounts weren't ready yet — "
+                    + "Plaid sometimes needs a minute. Pull down on the Dashboard to refresh "
+                    + "and they'll appear."
             } catch {
                 errorMessage = "Couldn't finish linking: \(error.localizedDescription)"
             }
